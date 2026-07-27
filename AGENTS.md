@@ -23,9 +23,12 @@ This directory is a local mirror of the ChatGPT project “任务省心记APP”
 
 ### Git workflow
 
+- Treat `origin` as the online source of truth after the remote repository is connected.
+- Before each material update, fetch the remote state and check whether the local branch is behind or has diverged.
 - After each completed material update, verify the affected files and create a local Git commit.
 - A commit must contain only the changes belonging to that update; do not mix unrelated user changes.
 - Use concise Conventional Commit messages such as `docs: add project plan` or `feat: add task creation`.
 - Do not commit temporary files, secrets, tokens, `.env` files, generated caches, or dependency folders.
+- If the remote branch changed elsewhere, integrate those changes safely before starting new work; do not overwrite them.
 - `git push`, history rewrites, rebases, hard resets, and force pushes always require explicit approval from the project owner.
 - If a change is incomplete or verification fails, leave it uncommitted and clearly report why.
