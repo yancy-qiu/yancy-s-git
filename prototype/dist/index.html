@@ -14,7 +14,7 @@
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%234657e8'/%3E%3Cpath d='M19 18h26v7H19zm0 13h19v7H19zm0 13h13v7H19z' fill='white'/%3E%3C/svg%3E"
     />
     <title>轻记 · 交互原型</title>
-    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./styles.css?v=2" />
   </head>
   <body>
     <main class="stage">
@@ -24,7 +24,7 @@
             <span></span><span></span><span></span>
           </div>
           <p>轻记</p>
-          <button class="titlebar-feedback" id="open-feedback" type="button">体验反馈 <span>↗</span></button>
+          <div class="titlebar-actions"><button class="titlebar-feedback" id="open-settings" type="button">设置</button><button class="titlebar-feedback" id="open-feedback" type="button">体验反馈 <span>↗</span></button></div>
         </header>
 
         <div class="workspace">
@@ -32,6 +32,8 @@
             <a class="brand" href="./" aria-label="轻记首页"><span class="brand-mark" aria-hidden="true">轻</span><span>轻记.</span></a>
             <nav aria-label="记录筛选">
               <button class="nav-item active" data-filter="today" type="button"><span aria-hidden="true">⌂</span>今天<small id="today-count">3</small></button>
+              <button class="nav-item" data-filter="inbox" type="button"><span aria-hidden="true">◇</span>收集箱<small id="inbox-count">1</small></button>
+              <button class="nav-item" data-filter="planned" type="button"><span aria-hidden="true">◷</span>计划<small id="planned-count">2</small></button>
               <button class="nav-item" data-filter="unorganized" type="button"><span aria-hidden="true">✦</span>待整理<small id="unorganized-count">1</small></button>
               <button class="nav-item" data-filter="all" type="button"><span aria-hidden="true">□</span>全部记录<small id="all-count">3</small></button>
               <button class="nav-item" data-filter="completed" type="button"><span aria-hidden="true">✓</span>已完成<small id="completed-count">0</small></button>
@@ -58,6 +60,12 @@
                 rows="3"
                 placeholder="直接写下来，不用先整理……"
               ></textarea>
+              <div class="capture-schedule" id="capture-schedule" hidden>
+                <label>日期<input id="capture-date" type="date" /></label>
+                <label>时间<input id="capture-time" type="time" /></label>
+                <label>优先级<select id="capture-priority"><option value="normal">普通</option><option value="high">重要</option><option value="low">稍后</option></select></label>
+                <label class="reminder-toggle"><input id="capture-reminder" type="checkbox" /> 到时提醒</label>
+              </div>
               <div class="capture-tools">
                 <div class="type-pills" aria-label="记录类型">
                   <button class="pill active" data-type="auto" type="button" aria-pressed="true">✦ 自动</button>
@@ -66,9 +74,11 @@
                   <button class="pill" data-type="progress" type="button" aria-pressed="false">进展</button>
                   <button class="pill" data-type="need" type="button" aria-pressed="false">需求</button>
                 </div>
-                <button class="primary-button" type="submit">记下来 <span>⌘↵</span></button>
+                <div class="capture-actions"><button class="schedule-button" id="toggle-schedule" type="button">◷ 安排</button><button class="primary-button" type="submit">记下来 <span>⌘↵</span></button></div>
               </div>
             </form>
+
+            <div class="mobile-toolbar"><label class="sr-only" for="mobile-filter">记录视图</label><select id="mobile-filter"><option value="today">今天</option><option value="inbox">收集箱</option><option value="planned">计划</option><option value="unorganized">待整理</option><option value="all">全部记录</option><option value="completed">已完成</option></select><button id="mobile-widget" type="button">▦ 小组件预览</button></div>
 
             <div class="section-row">
               <h2 id="list-heading">最近记录</h2>
@@ -108,7 +118,17 @@
       <p class="dialog-note">反馈仅保存在此浏览器，不会自动发送。</p>
     </dialog>
 
-    <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script src="./app.js"></script>
+    <dialog id="settings-dialog" class="settings-dialog">
+      <div class="dialog-heading"><div><p class="eyebrow">偏好设置</p><h2>让轻记适合你的工作方式。</h2></div><button class="icon-button" data-close="settings-dialog" type="button" aria-label="关闭设置">×</button></div>
+      <div class="settings-content">
+        <section class="setting-row"><div><strong>外观</strong><p>原型默认跟随系统；可切换深浅主题体验。</p></div><select id="theme-select"><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></section>
+        <section class="setting-row"><div><strong>桌面隐私</strong><p>隐藏小组件里的记录正文。</p></div><label class="switch"><input id="privacy-toggle" type="checkbox" /><span></span></label></section>
+        <section class="setting-row"><div><strong>本地存储</strong><p>记录只保存在当前浏览器，不上传云端。</p></div><span class="local-badge">仅本机</span></section>
+      </div>
+      <p class="dialog-note">正式 Mac 版会使用本地数据库，并在你需要时再申请通知权限。</p>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"><span id="toast-message"></span><button id="toast-action" type="button" hidden>撤销</button></div>
+    <script src="./app.js?v=2"></script>
   </body>
 </html>
