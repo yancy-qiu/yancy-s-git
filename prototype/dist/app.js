@@ -106,7 +106,18 @@ const loadSettings = () => {
     return { theme: saved.theme || defaults.theme, privateWidget: Boolean(saved.privateWidget), aiProvider: aiProviders[inferredProvider] ? inferredProvider : "custom", aiProfiles: profiles };
   } catch { return defaults; }
 };
-const state = { records: loadRecords(), selectedId: null, filter: "today", captureType: "auto", rating: 0, deletedRecord: null, settings: loadSettings(), aiErrors: {} };
+const state = {
+  records: loadRecords(),
+  selectedId: null,
+  filter: "today",
+  rating: 0,
+  deletedRecord: null,
+  settings: loadSettings(),
+  aiErrors: {},
+  chatRecordId: null,
+  chatBusy: false,
+  chatMessages: [{ role: "assistant", content: "告诉我你想完成什么。我可以直接创建任务，也可以引用现有任务后帮你改标题、时间、优先级和下一步。" }],
+};
 const legacySessionApiKey = sessionStorage.getItem(LEGACY_AI_KEY_SESSION_KEY);
 if (legacySessionApiKey && !sessionStorage.getItem(AI_KEY_SESSION_PREFIX + state.settings.aiProvider)) {
   sessionStorage.setItem(AI_KEY_SESSION_PREFIX + state.settings.aiProvider, legacySessionApiKey);
@@ -118,6 +129,8 @@ const emptyState = $("#empty-state");
 const detailContent = $("#detail-content");
 const input = $("#capture-input");
 const form = $("#capture-form");
+const chatMessagesElement = $("#chat-messages");
+const chatTaskPicker = $("#chat-task-picker");
 const toast = $("#toast");
 const toastMessage = $("#toast-message");
 const toastAction = $("#toast-action");
@@ -193,6 +206,90 @@ function formatSchedule(record) {
   return label + (record.dueTime ? " " + record.dueTime : "");
 }
 
+function setChatContext(recordId, announceChange = true) {
+  const record = getRecord(recordId);
+  const nextRecordId = record?.id || null;
+  if (nextRecordId !== state.chatRecordId) {
+    state.chatMessages = [{
+      role: "assistant",
+      content: record
+        ? "已引用“" + record.title + "”。告诉我你想怎么修改，我会直接更新这条任务。"
+        : "已开始新任务对话。告诉我你想完成什么，我会帮你创建并安排好。",
+    }];
+  }
+  state.chatRecordId = nextRecordId;
+  if (record) state.selectedId = record.id;
+  renderChat();
+  renderRecords();
+  renderDetail();
+  if (announceChange) announce(record ? "已引用任务，可以直接告诉 AI 如何修改" : "已切换为新任务对话");
+  input.focus();
+}
+
+function renderChat() {
+  const currentRecord = getRecord(state.chatRecordId);
+  const currentPickerValue = currentRecord?.id || "";
+  chatTaskPicker.replaceChildren();
+  const newTaskOption = document.createElement("option");
+  newTaskOption.value = "";
+  newTaskOption.textContent = "新任务";
+  chatTaskPicker.append(newTaskOption);
+  state.records.forEach((record) => {
+    const option = document.createElement("option");
+    option.value = record.id;
+    option.textContent = record.title;
+    chatTaskPicker.append(option);
+  });
+  chatTaskPicker.value = currentPickerValue;
+
+  const context = $("#task-context");
+  context.hidden = !currentRecord;
+  if (currentRecord) {
+    $("#task-context-title").textContent = currentRecord.title;
+    $("#copilot-subtitle").textContent = "告诉 AI 如何调整这条任务";
+    input.placeholder = "例如：改到周五下午 4 点，并设为重要……";
+  } else {
+    $("#copilot-subtitle").textContent = "描述目标，AI 会创建并整理任务";
+    input.placeholder = "例如：明天下午 3 点提醒我提交周报……";
+  }
+
+  chatMessagesElement.replaceChildren();
+  state.chatMessages.forEach((message) => {
+    const bubble = document.createElement("div");
+    bubble.className = "chat-message " + message.role + (message.pending ? " pending" : "");
+    bubble.textContent = message.content;
+    if (message.result) {
+      const result = document.createElement("span");
+      result.className = "message-result";
+      result.textContent = message.result;
+      bubble.append(result);
+    }
+    chatMessagesElement.append(bubble);
+  });
+  chatMessagesElement.scrollTop = chatMessagesElement.scrollHeight;
+
+  const suggestions = currentRecord
+    ? ["改到明天下午 3 点", "设为重要并开启提醒", "把下一步拆得更清楚"]
+    : ["明天下午提醒我提交周报", "记录下周产品讨论会", "帮我规划今天最重要的事"];
+  const suggestionContainer = $("#chat-suggestions");
+  suggestionContainer.replaceChildren();
+  suggestions.forEach((label) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "chat-suggestion";
+    button.textContent = label;
+    button.addEventListener("click", () => { input.value = label; input.focus(); });
+    suggestionContainer.append(button);
+  });
+  $("#chat-send").disabled = state.chatBusy;
+  $("#composer-hint").textContent = state.chatBusy ? "AI 正在理解并更新任务…" : currentRecord ? "本次修改只作用于引用的任务" : "AI 会自动提取类型、时间和优先级";
+}
+
+function addChatMessage(role, content, result = "") {
+  state.chatMessages.push({ role, content, result });
+  if (state.chatMessages.length > 12) state.chatMessages.splice(1, state.chatMessages.length - 12);
+}
+
 function renderRecords() {
   const visible = filteredRecords();
   recordsElement.replaceChildren();
@@ -231,7 +328,17 @@ function renderRecords() {
       announce(record.completed ? "已完成" : "已恢复");
       render();
     });
-    card.append(select, check);
+    const collaborate = document.createElement("button");
+    collaborate.type = "button";
+    collaborate.className = "record-ai-button";
+    collaborate.setAttribute("aria-label", "引用“" + record.title + "”与 AI 协作");
+    collaborate.title = "与 AI 协作";
+    collaborate.textContent = "✦";
+    collaborate.addEventListener("click", () => setChatContext(record.id));
+    const cardActions = document.createElement("div");
+    cardActions.className = "record-card-actions";
+    cardActions.append(collaborate, check);
+    card.append(select, cardActions);
     recordsElement.append(card);
   });
 }
@@ -316,6 +423,14 @@ function renderDetail() {
 
   const actions = document.createElement("div");
   actions.className = "detail-actions";
+  const collaborate = document.createElement("button");
+  collaborate.type = "button";
+  collaborate.className = "primary-button detail-collaborate";
+  collaborate.textContent = "✦ 与 AI 协作";
+  collaborate.addEventListener("click", () => {
+    setChatContext(record.id);
+    $(".content").scrollTo({ top: 0, behavior: "smooth" });
+  });
   const edit = document.createElement("button");
   edit.type = "button";
   edit.className = "secondary-button";
@@ -336,7 +451,7 @@ function renderDetail() {
   remove.className = "danger-button";
   remove.textContent = "删除";
   remove.addEventListener("click", () => deleteRecord(record));
-  actions.append(edit, complete, tomorrow, remove);
+  actions.append(collaborate, edit, complete, tomorrow, remove);
   detailContent.append(actions);
 }
 
@@ -563,27 +678,119 @@ async function requestAIOrganization(record) {
   return parseJSONObject(content);
 }
 
-function applyAIOrganization(record, result) {
+function applyTaskPayload(record, result, allowScheduleClear = false) {
   const validTypes = ["task", "meeting", "progress", "need"];
   const validPriorities = ["high", "normal", "low"];
   const title = typeof result.title === "string" ? result.title.trim().slice(0, 80) : "";
+  const body = typeof result.content === "string" ? result.content.trim().slice(0, 2000) : "";
   const summary = typeof result.summary === "string" ? result.summary.trim().slice(0, 500) : "";
   const clarification = typeof result.clarification === "string" ? result.clarification.trim().slice(0, 180) : "";
   const dueDate = typeof result.dueDate === "string" && isValidISODate(result.dueDate) ? result.dueDate : "";
   const dueTime = dueDate && typeof result.dueTime === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(result.dueTime) ? result.dueTime : "";
   const points = Array.isArray(result.actionItems) ? result.actionItems.filter((item) => typeof item === "string" && item.trim()).slice(0, 3).map((item) => item.trim().slice(0, 160)) : [];
   if (title) record.title = title;
+  if (body) record.content = body;
   if (validTypes.includes(result.category)) record.type = result.category;
   if (validPriorities.includes(result.priority)) record.priority = result.priority;
-  record.summary = summary || record.content;
-  record.points = points;
+  if (summary || Object.hasOwn(result, "summary")) record.summary = summary || record.content;
+  if (Array.isArray(result.actionItems)) record.points = points;
   if (dueDate) {
     record.dueDate = dueDate;
     record.dueTime = dueTime;
     record.reminder = Boolean(result.reminder);
+  } else if (allowScheduleClear && Object.hasOwn(result, "dueDate") && (result.dueDate === null || result.dueDate === "")) {
+    record.dueDate = "";
+    record.dueTime = "";
+    record.reminder = false;
   }
-  record.clarification = clarification;
+  if (Object.hasOwn(result, "clarification")) record.clarification = clarification;
+  if (typeof result.completed === "boolean") record.completed = result.completed;
   record.organized = true;
+}
+
+function applyAIOrganization(record, result) {
+  applyTaskPayload(record, result);
+}
+
+async function requestAITaskCollaboration(userMessage, referencedRecord) {
+  const current = new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    dateStyle: "full",
+    timeStyle: "short",
+    hour12: false,
+  }).format(new Date());
+  const systemPrompt = [
+    "你是轻记的 AI 任务协作助手。你通过对话帮助用户创建或编辑任务。",
+    "当前时间（Asia/Shanghai）：" + current + "。",
+    "只返回一个 JSON 对象，不要 Markdown，不要补充说明。",
+    "格式必须是：{\"reply\":\"给用户的简短回复\",\"action\":\"create|update|none\",\"task\":{...}}。",
+    "task 可包含 title、content、category（task/meeting/progress/need）、summary、actionItems（最多3条）、dueDate（YYYY-MM-DD或null）、dueTime（HH:mm或null）、priority（high/normal/low）、reminder、completed、clarification。",
+    "引用了任务时，除非用户明确要求另建任务，否则 action 使用 update，并在 task 中返回修改后的完整任务字段。未引用任务且用户表达了可执行事项时使用 create。只是询问或信息不足时使用 none。",
+    "不要编造日期、时间、负责人或事实。相对日期按当前时间计算；存在关键歧义时 action 使用 none，并在 reply 中提出一个简短问题。",
+  ].join("\n");
+  const context = referencedRecord ? JSON.stringify({
+    title: referencedRecord.title,
+    content: referencedRecord.content,
+    category: referencedRecord.type,
+    summary: referencedRecord.summary,
+    actionItems: referencedRecord.points,
+    dueDate: referencedRecord.dueDate || null,
+    dueTime: referencedRecord.dueTime || null,
+    priority: referencedRecord.priority,
+    reminder: referencedRecord.reminder,
+    completed: referencedRecord.completed,
+  }) : "未引用任务";
+  const conversation = state.chatMessages
+    .filter((message) => !message.pending)
+    .slice(0, -1)
+    .slice(-6)
+    .map((message) => ({ role: message.role === "assistant" ? "assistant" : "user", content: message.content }));
+  const content = await withAITimeout((signal) => callModel([
+    { role: "system", content: systemPrompt + "\n当前引用任务：" + context },
+    ...conversation,
+    { role: "user", content: userMessage },
+  ], signal, 1400));
+  return parseJSONObject(content);
+}
+
+function applyChatResult(result, userMessage, referencedRecord) {
+  const action = ["create", "update", "none"].includes(result.action) ? result.action : "none";
+  const task = result.task && typeof result.task === "object" ? result.task : {};
+  let record = referencedRecord;
+  let resultLabel = "没有修改任务";
+  if (action === "create") {
+    record = {
+      id: makeId(),
+      title: userMessage.slice(0, 42),
+      content: userMessage,
+      type: "task",
+      time: nowTime(),
+      dueDate: "",
+      dueTime: "",
+      priority: "normal",
+      reminder: false,
+      pinned: false,
+      completed: false,
+      organized: true,
+      summary: userMessage,
+      clarification: "",
+      points: [],
+    };
+    applyTaskPayload(record, task, true);
+    state.records.unshift(record);
+    resultLabel = "已创建任务 · " + record.title;
+  } else if (action === "update" && record) {
+    applyTaskPayload(record, task, true);
+    resultLabel = "已更新任务 · " + record.title;
+  }
+  if (record && action !== "none") {
+    state.chatRecordId = record.id;
+    state.selectedId = record.id;
+    delete state.aiErrors[record.id];
+    saveRecords();
+    setFilter(record.completed ? "completed" : !record.dueDate ? "inbox" : record.dueDate > todayISO ? "planned" : "today");
+  }
+  return { record, resultLabel, changed: action !== "none" && Boolean(record) };
 }
 
 function friendlyAIError(error) {
@@ -613,6 +820,10 @@ function deleteRecord(record) {
   state.deletedRecord = { record: clone(record), index };
   state.records.splice(index, 1);
   state.selectedId = null;
+  if (state.chatRecordId === record.id) {
+    state.chatRecordId = null;
+    state.chatMessages = [{ role: "assistant", content: "这条任务已删除。你可以继续告诉我新的任务。" }];
+  }
   saveRecords();
   render();
   announce("记录已删除", () => {
@@ -652,12 +863,13 @@ function renderWidget() {
 
 function render() {
   updateCounts();
+  renderChat();
   renderRecords();
   renderDetail();
   renderWidget();
 }
 
-function createRecord(rawText, explicitType = state.captureType, options = {}) {
+function createRecord(rawText, explicitType = "auto", options = {}) {
   const text = rawText.trim();
   if (!text) return null;
   const parts = text.split("\n");
@@ -673,32 +885,44 @@ function createRecord(rawText, explicitType = state.captureType, options = {}) {
   return record;
 }
 
-form.addEventListener("submit", (event) => {
+form.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const record = createRecord(input.value, state.captureType, { dueDate: $("#capture-date").value, dueTime: $("#capture-time").value, priority: $("#capture-priority").value, reminder: $("#capture-reminder").checked });
-  if (!record) { input.focus(); return; }
+  const userMessage = input.value.trim();
+  if (!userMessage || state.chatBusy) { input.focus(); return; }
+  if (!hasAIConfiguration()) {
+    hydrateAISettings();
+    openDialog("settings-dialog");
+    setConnectionStatus("请先配置并测试 AI 模型，再开始任务协作。", "error");
+    $("#ai-provider").focus();
+    return;
+  }
+  const referencedRecord = getRecord(state.chatRecordId);
+  addChatMessage("user", userMessage);
+  state.chatMessages.push({ role: "assistant", content: referencedRecord ? "正在读取并修改这条任务…" : "正在把你的想法整理成任务…", pending: true });
+  state.chatBusy = true;
   input.value = "";
-  $("#capture-date").value = "";
-  $("#capture-time").value = "";
-  $("#capture-priority").value = "normal";
-  $("#capture-reminder").checked = false;
-  $("#capture-schedule").hidden = true;
-  $("#toggle-schedule").classList.remove("active");
-  announce("记录已保存");
+  renderChat();
+  try {
+    const result = await requestAITaskCollaboration(userMessage, referencedRecord);
+    state.chatMessages = state.chatMessages.filter((message) => !message.pending);
+    const applied = applyChatResult(result, userMessage, referencedRecord);
+    const reply = typeof result.reply === "string" && result.reply.trim() ? result.reply.trim().slice(0, 600) : applied.changed ? "已经按你的要求处理好了。" : "我还需要更多信息才能处理。";
+    addChatMessage("assistant", reply, applied.resultLabel);
+    if (applied.changed) {
+      $("#detail-panel").classList.add("active");
+      announce(applied.resultLabel);
+    }
+  } catch (error) {
+    state.chatMessages = state.chatMessages.filter((message) => !message.pending);
+    addChatMessage("assistant", friendlyAIError(error) + " 你的任务没有被修改。");
+  } finally {
+    state.chatBusy = false;
+    render();
+    input.focus();
+  }
 });
 input.addEventListener("keydown", (event) => {
   if ((event.metaKey || event.ctrlKey) && event.key === "Enter") form.requestSubmit();
-});
-
-document.querySelectorAll(".pill").forEach((pill) => {
-  pill.addEventListener("click", () => {
-    state.captureType = pill.dataset.type;
-    document.querySelectorAll(".pill").forEach((item) => {
-      const active = item === pill;
-      item.classList.toggle("active", active);
-      item.setAttribute("aria-pressed", String(active));
-    });
-  });
 });
 
 document.querySelectorAll(".nav-item").forEach((item) => {
@@ -709,13 +933,9 @@ document.querySelectorAll(".nav-item").forEach((item) => {
 });
 
 $("#focus-capture").addEventListener("click", () => input.focus());
-$("#empty-add").addEventListener("click", () => input.focus());
-$("#toggle-schedule").addEventListener("click", () => {
-  const panel = $("#capture-schedule");
-  panel.hidden = !panel.hidden;
-  $("#toggle-schedule").classList.toggle("active", !panel.hidden);
-  if (!panel.hidden) $("#capture-date").focus();
-});
+$("#empty-add").addEventListener("click", () => setChatContext(null, false));
+chatTaskPicker.addEventListener("change", (event) => setChatContext(event.target.value));
+$("#clear-task-context").addEventListener("click", () => setChatContext(null));
 $("#close-detail").addEventListener("click", () => {
   state.selectedId = null;
   $("#detail-panel").classList.remove("active");
@@ -730,7 +950,7 @@ function openDialog(id) {
 $("#open-widget").addEventListener("click", () => openDialog("widget-dialog"));
 $("#mobile-widget").addEventListener("click", () => openDialog("widget-dialog"));
 $("#mobile-filter").addEventListener("change", (event) => { setFilter(event.target.value); render(); });
-$("#widget-add").addEventListener("click", () => { $("#widget-dialog").close(); input.focus(); });
+$("#widget-add").addEventListener("click", () => { $("#widget-dialog").close(); setChatContext(null, false); });
 $("#open-feedback").addEventListener("click", () => openDialog("feedback-dialog"));
 $("#open-settings").addEventListener("click", () => { hydrateAISettings(); openDialog("settings-dialog"); });
 document.querySelectorAll("[data-close]").forEach((button) => button.addEventListener("click", () => $("#" + button.dataset.close).close()));
@@ -811,7 +1031,7 @@ function hydrateAISettings() {
   $("#ai-api-key").placeholder = config.keyPlaceholder;
   $("#ai-api-key").type = "password";
   $("#toggle-api-key").textContent = "显示密钥";
-  $("#ai-provider-note").textContent = config.note + " 使用 AI 整理时会发送当前记录；公开接口需使用 HTTPS 并允许跨域请求。";
+  $("#ai-provider-note").textContent = config.note + " 使用 AI 协作时会发送对话和引用任务；公开接口需使用 HTTPS 并允许跨域请求。";
   setConnectionStatus(hasAIConfiguration() ? "配置已保存在本次会话中，可测试连接。" : "API Key 只保存在当前标签页，关闭后自动清除。", "");
 }
 
@@ -861,7 +1081,7 @@ $("#test-ai-connection").addEventListener("click", async () => {
   setConnectionStatus("正在向 " + getAIConfig().name + " 发送一条不含记录内容的测试消息…", "");
   try {
     await withAITimeout((signal) => callModel([{ role: "user", content: "请只回复 OK，用于验证 API 连接。" }], signal, 32), 20000);
-    setConnectionStatus(getAIConfig().name + " 连接成功，可以使用真实模型整理记录。", "success");
+    setConnectionStatus(getAIConfig().name + " 连接成功，可以开始 AI 任务协作。", "success");
     announce("模型连接成功");
   } catch (error) {
     setConnectionStatus(friendlyAIError(error), "error");

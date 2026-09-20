@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#4657e8" />
     <meta
       name="description"
-      content="轻记浏览器交互原型：快速记录、AI 整理与 Mac 桌面小组件体验。"
+      content="轻记浏览器交互原型：AI 协作、任务管理与 Mac 桌面小组件体验。"
     />
     <link
       rel="icon"
@@ -14,7 +14,7 @@
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%234657e8'/%3E%3Cpath d='M19 18h26v7H19zm0 13h19v7H19zm0 13h13v7H19z' fill='white'/%3E%3C/svg%3E"
     />
     <title>轻记 · 交互原型</title>
-    <link rel="stylesheet" href="./styles.css?v=4" />
+    <link rel="stylesheet" href="./styles.css?v=5" />
   </head>
   <body>
     <main class="stage">
@@ -50,33 +50,23 @@
                 <p class="eyebrow" id="current-date">9 月 17 日 · 星期四</p>
                 <h1 id="view-title">今天要记什么？</h1>
               </div>
-              <button class="quiet-button" id="focus-capture" type="button">新建记录 <span>⌘N</span></button>
+              <button class="quiet-button" id="focus-capture" type="button">和 AI 对话 <span>⌘N</span></button>
             </div>
 
-            <form class="quick-capture" id="capture-form">
-              <label class="sr-only" for="capture-input">快速记录</label>
-              <textarea
-                id="capture-input"
-                rows="3"
-                placeholder="直接写下来，不用先整理……"
-              ></textarea>
-              <div class="capture-schedule" id="capture-schedule" hidden>
-                <label>日期<input id="capture-date" type="date" /></label>
-                <label>时间<input id="capture-time" type="time" /></label>
-                <label>优先级<select id="capture-priority"><option value="normal">普通</option><option value="high">重要</option><option value="low">稍后</option></select></label>
-                <label class="reminder-toggle"><input id="capture-reminder" type="checkbox" /> 到时提醒</label>
+            <section class="ai-copilot" aria-labelledby="copilot-title">
+              <div class="copilot-head">
+                <div class="copilot-identity"><span class="copilot-orb" aria-hidden="true">✦</span><div><strong id="copilot-title">AI 任务协作</strong><span id="copilot-subtitle">描述目标，AI 会创建并整理任务</span></div></div>
+                <label class="task-context-picker" for="chat-task-picker"><span>引用任务</span><select id="chat-task-picker"><option value="">新任务</option></select></label>
               </div>
-              <div class="capture-tools">
-                <div class="type-pills" aria-label="记录类型">
-                  <button class="pill active" data-type="auto" type="button" aria-pressed="true">✦ 自动</button>
-                  <button class="pill" data-type="task" type="button" aria-pressed="false">任务</button>
-                  <button class="pill" data-type="meeting" type="button" aria-pressed="false">会议</button>
-                  <button class="pill" data-type="progress" type="button" aria-pressed="false">进展</button>
-                  <button class="pill" data-type="need" type="button" aria-pressed="false">需求</button>
-                </div>
-                <div class="capture-actions"><button class="schedule-button" id="toggle-schedule" type="button">◷ 安排</button><button class="primary-button" type="submit">记下来 <span>⌘↵</span></button></div>
-              </div>
-            </form>
+              <div class="task-context" id="task-context" hidden><span aria-hidden="true">↗</span><div><small>正在协作</small><strong id="task-context-title"></strong></div><button id="clear-task-context" type="button" aria-label="取消引用任务">×</button></div>
+              <div class="chat-messages" id="chat-messages" aria-live="polite"></div>
+              <div class="chat-suggestions" id="chat-suggestions" aria-label="快捷指令"></div>
+              <form class="chat-composer" id="capture-form">
+                <label class="sr-only" for="capture-input">给 AI 发送消息</label>
+                <textarea id="capture-input" rows="2" placeholder="例如：明天下午 3 点提醒我提交周报……"></textarea>
+                <div class="composer-foot"><span id="composer-hint">AI 会自动提取类型、时间和优先级</span><button class="primary-button chat-send" id="chat-send" type="submit" aria-label="发送消息">发送 <span>⌘↵</span></button></div>
+              </form>
+            </section>
 
             <div class="mobile-toolbar"><label class="sr-only" for="mobile-filter">记录视图</label><select id="mobile-filter"><option value="today">今天</option><option value="inbox">收集箱</option><option value="planned">计划</option><option value="unorganized">待整理</option><option value="all">全部记录</option><option value="completed">已完成</option></select><button id="mobile-widget" type="button">▦ 小组件预览</button></div>
 
@@ -134,7 +124,7 @@
           </div>
           <div class="ai-setting-actions"><button class="secondary-button" id="toggle-api-key" type="button">显示密钥</button><button class="quiet-danger-button" id="clear-api-key" type="button">清除密钥</button><button class="primary-button" id="test-ai-connection" type="button">测试连接</button></div>
           <p class="connection-status" id="ai-connection-status" role="status">API Key 只保存在当前标签页，关闭后自动清除。</p>
-          <p class="setting-security-note" id="ai-provider-note">使用 AI 整理时，该条记录会发送到你选择的模型服务。公开接口需使用 HTTPS；本地开发可使用 localhost，并需允许跨域请求。</p>
+          <p class="setting-security-note" id="ai-provider-note">使用 AI 协作时，对话和引用任务会发送到你选择的模型服务。公开接口需使用 HTTPS；本地开发可使用 localhost，并需允许跨域请求。</p>
         </section>
         <section class="setting-row"><div><strong>外观</strong><p>原型默认跟随系统；可切换深浅主题体验。</p></div><select id="theme-select"><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></section>
         <section class="setting-row"><div><strong>桌面隐私</strong><p>隐藏小组件里的记录正文。</p></div><label class="switch"><input id="privacy-toggle" type="checkbox" /><span></span></label></section>
@@ -144,6 +134,6 @@
     </dialog>
 
     <div class="toast" id="toast" role="status" aria-live="polite"><span id="toast-message"></span><button id="toast-action" type="button" hidden>撤销</button></div>
-    <script src="./app.js?v=5"></script>
+    <script src="./app.js?v=6"></script>
   </body>
 </html>
