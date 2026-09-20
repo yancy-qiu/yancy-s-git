@@ -1,6 +1,8 @@
 const STORAGE_KEY = "qingji.prototype.records.v1";
 const FEEDBACK_KEY = "qingji.prototype.feedback.v1";
 const SETTINGS_KEY = "qingji.prototype.settings.v1";
+const AI_KEY_SESSION_KEY = "qingji.prototype.ai-key.v1";
+const DEFAULT_AI_ENDPOINT = "https://api.openai.com/v1/chat/completions";
 
 const typeNames = { auto: "自动", task: "任务", meeting: "会议", progress: "进展", need: "需求" };
 const priorityNames = { high: "重要", normal: "普通", low: "稍后" };
@@ -24,7 +26,7 @@ const loadRecords = () => {
     return records.map((record) => {
       const sample = sampleRecords.find((item) => item.id === record.id);
       const migrated = sample && !Object.hasOwn(record, "dueDate") ? { ...sample, ...record } : record;
-      return { dueDate: "", dueTime: "", priority: "normal", reminder: false, pinned: false, ...migrated };
+      return { dueDate: "", dueTime: "", priority: "normal", reminder: false, pinned: false, summary: "", clarification: "", ...migrated };
     });
   } catch {
     return clone(sampleRecords);
@@ -32,10 +34,11 @@ const loadRecords = () => {
 };
 
 const loadSettings = () => {
-  try { return { theme: "system", privateWidget: false, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}") }; }
-  catch { return { theme: "system", privateWidget: false }; }
+  const defaults = { theme: "system", privateWidget: false, aiEndpoint: DEFAULT_AI_ENDPOINT, aiModel: "" };
+  try { return { ...defaults, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}") }; }
+  catch { return defaults; }
 };
-const state = { records: loadRecords(), selectedId: null, filter: "today", captureType: "auto", rating: 0, deletedRecord: null, settings: loadSettings() };
+const state = { records: loadRecords(), selectedId: null, filter: "today", captureType: "auto", rating: 0, deletedRecord: null, settings: loadSettings(), aiErrors: {} };
 const $ = (selector) => document.querySelector(selector);
 const recordsElement = $("#records");
 const emptyState = $("#empty-state");
@@ -50,6 +53,8 @@ const saveRecords = () => localStorage.setItem(STORAGE_KEY, JSON.stringify(state
 const getRecord = (id) => state.records.find((record) => record.id === id);
 const makeId = () => globalThis.crypto?.randomUUID?.() || "record-" + Date.now();
 const nowTime = () => new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());
+const getApiKey = () => sessionStorage.getItem(AI_KEY_SESSION_KEY) || "";
+const hasAIConfiguration = () => Boolean(state.settings.aiEndpoint?.trim() && state.settings.aiModel?.trim() && getApiKey());
 
 function announce(message, action = null) {
   toastMessage.textContent = message;
@@ -181,7 +186,7 @@ function renderDetail() {
     const summaryLabel = document.createElement("label");
     summaryLabel.textContent = "AI 摘要";
     const summaryText = document.createElement("p");
-    summaryText.textContent = record.content;
+    summaryText.textContent = record.summary || record.content;
     summary.append(summaryLabel, summaryText);
     const points = document.createElement("section");
     points.className = "result-block";
@@ -208,7 +213,24 @@ function renderDetail() {
     organize.textContent = "用 AI 整理";
     organize.addEventListener("click", () => organizeRecord(record, organize));
     block.append(label, text, organize);
+    if (state.aiErrors[record.id]) {
+      const error = document.createElement("p");
+      error.className = "connection-status error";
+      error.textContent = state.aiErrors[record.id];
+      block.append(error);
+    }
     detailContent.append(block);
+  }
+
+  if (record.clarification) {
+    const clarification = document.createElement("section");
+    clarification.className = "result-block clarification-block";
+    const clarificationLabel = document.createElement("label");
+    clarificationLabel.textContent = "需要确认";
+    const clarificationText = document.createElement("p");
+    clarificationText.textContent = record.clarification;
+    clarification.append(clarificationLabel, clarificationText);
+    detailContent.append(clarification);
   }
 
   const actions = document.createElement("div");
@@ -317,16 +339,152 @@ function buildSelectField(labelText, id, options, value) {
   return { wrapper, input };
 }
 
-function organizeRecord(record, button) {
+async function organizeRecord(record, button) {
+  if (!hasAIConfiguration()) {
+    hydrateAISettings();
+    openDialog("settings-dialog");
+    setConnectionStatus("请先填写 API 地址、模型名称和 API Key。", "error");
+    $("#ai-endpoint").focus();
+    return;
+  }
   button.disabled = true;
   button.textContent = "AI 正在整理…";
-  window.setTimeout(() => {
-    record.organized = true;
-    record.points = ["确认“" + record.title.slice(0, 12) + "”的负责人", "补充完成时间", "处理后在轻记中标记完成"];
+  delete state.aiErrors[record.id];
+  try {
+    const result = await requestAIOrganization(record);
+    applyAIOrganization(record, result);
     saveRecords();
+    setFilter(!record.dueDate ? "inbox" : record.dueDate > todayISO ? "planned" : "today");
     announce("AI 整理完成");
     render();
-  }, 650);
+  } catch (error) {
+    state.aiErrors[record.id] = friendlyAIError(error);
+    announce("整理失败，原始记录已保留");
+    renderDetail();
+  }
+}
+
+function validatedAIEndpoint(value) {
+  let url;
+  try { url = new URL(value); }
+  catch { throw new Error("INVALID_ENDPOINT"); }
+  const localHost = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && localHost)) throw new Error("INSECURE_ENDPOINT");
+  return url.toString();
+}
+
+async function callChatCompletions(messages, signal) {
+  const endpoint = validatedAIEndpoint(state.settings.aiEndpoint);
+  const apiKey = getApiKey();
+  if (!state.settings.aiModel.trim()) throw new Error("MISSING_MODEL");
+  if (!apiKey) throw new Error("MISSING_KEY");
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + apiKey },
+    body: JSON.stringify({ model: state.settings.aiModel.trim(), messages }),
+    signal,
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error("API_ERROR");
+    error.httpStatus = response.status;
+    throw error;
+  }
+  const content = body?.choices?.[0]?.message?.content;
+  if (typeof content === "string" && content.trim()) return content.trim();
+  if (Array.isArray(content)) {
+    const combined = content.map((item) => typeof item === "string" ? item : item?.text || "").join("").trim();
+    if (combined) return combined;
+  }
+  throw new Error("INVALID_RESPONSE");
+}
+
+async function withAITimeout(request, milliseconds = 30000) {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), milliseconds);
+  try { return await request(controller.signal); }
+  finally { window.clearTimeout(timeout); }
+}
+
+function parseJSONObject(text) {
+  const normalized = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+  const start = normalized.indexOf("{");
+  const end = normalized.lastIndexOf("}");
+  if (start < 0 || end <= start) throw new Error("INVALID_JSON");
+  try { return JSON.parse(normalized.slice(start, end + 1)); }
+  catch { throw new Error("INVALID_JSON"); }
+}
+
+function isValidISODate(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value || "")) return false;
+  const date = new Date(value + "T00:00:00");
+  return !Number.isNaN(date.getTime()) && localISODate(date) === value;
+}
+
+async function requestAIOrganization(record) {
+  const current = new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    dateStyle: "full",
+    timeStyle: "short",
+    hour12: false,
+  }).format(new Date());
+  const systemPrompt = [
+    "你是轻记中的任务整理助手。根据用户的原始记录提取结构化信息。",
+    "当前时间（Asia/Shanghai）：" + current + "。",
+    "只返回一个 JSON 对象，不要 Markdown，不要补充说明。",
+    "字段必须为：title（精炼标题）、category（task/meeting/progress/need）、summary（不添加事实的简短摘要）、actionItems（最多3条可执行事项）、dueDate（YYYY-MM-DD或null）、dueTime（HH:mm或null）、priority（high/normal/low）、reminder（布尔值）、clarification（信息含糊时的一句确认问题，否则空字符串）。",
+    "不要编造日期、时间、负责人或事实。相对日期按当前时间计算；无法确定时返回 null 并写入 clarification。",
+  ].join("\n");
+  const userPrompt = [
+    "原始标题：" + record.title,
+    "原始内容：" + record.content,
+    "当前日期：" + (record.dueDate || "未设置"),
+    "当前时间：" + (record.dueTime || "未设置"),
+    "当前优先级：" + record.priority,
+  ].join("\n");
+  const content = await withAITimeout((signal) => callChatCompletions([
+    { role: "system", content: systemPrompt },
+    { role: "user", content: userPrompt },
+  ], signal));
+  return parseJSONObject(content);
+}
+
+function applyAIOrganization(record, result) {
+  const validTypes = ["task", "meeting", "progress", "need"];
+  const validPriorities = ["high", "normal", "low"];
+  const title = typeof result.title === "string" ? result.title.trim().slice(0, 80) : "";
+  const summary = typeof result.summary === "string" ? result.summary.trim().slice(0, 500) : "";
+  const clarification = typeof result.clarification === "string" ? result.clarification.trim().slice(0, 180) : "";
+  const dueDate = typeof result.dueDate === "string" && isValidISODate(result.dueDate) ? result.dueDate : "";
+  const dueTime = dueDate && typeof result.dueTime === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(result.dueTime) ? result.dueTime : "";
+  const points = Array.isArray(result.actionItems) ? result.actionItems.filter((item) => typeof item === "string" && item.trim()).slice(0, 3).map((item) => item.trim().slice(0, 160)) : [];
+  if (title) record.title = title;
+  if (validTypes.includes(result.category)) record.type = result.category;
+  if (validPriorities.includes(result.priority)) record.priority = result.priority;
+  record.summary = summary || record.content;
+  record.points = points;
+  if (dueDate) {
+    record.dueDate = dueDate;
+    record.dueTime = dueTime;
+    record.reminder = Boolean(result.reminder);
+  }
+  record.clarification = clarification;
+  record.organized = true;
+}
+
+function friendlyAIError(error) {
+  if (error?.name === "AbortError") return "模型响应超时，请检查网络后重试。";
+  if (error?.message === "INVALID_ENDPOINT") return "API 地址格式不正确。";
+  if (error?.message === "INSECURE_ENDPOINT") return "公开 API 地址必须使用 HTTPS；HTTP 仅限 localhost。";
+  if (error?.message === "MISSING_MODEL") return "请先填写模型名称。";
+  if (error?.message === "MISSING_KEY") return "请先填写 API Key。";
+  if (error?.message === "INVALID_RESPONSE" || error?.message === "INVALID_JSON") return "模型返回的内容无法识别，请重试或更换模型。";
+  if (error?.message === "API_ERROR" && [401, 403].includes(error.httpStatus)) return "认证失败，请检查 API Key 和模型权限。";
+  if (error?.message === "API_ERROR" && error.httpStatus === 404) return "API 地址或模型名称不存在。";
+  if (error?.message === "API_ERROR" && error.httpStatus === 429) return "请求过于频繁或额度不足，请稍后重试。";
+  if (error?.message === "API_ERROR") return "模型服务返回错误（HTTP " + error.httpStatus + "）。";
+  if (error instanceof TypeError) return "无法连接模型服务。请检查网络、API 地址及浏览器跨域设置。";
+  return "模型连接失败，请检查配置后重试。";
 }
 
 function deleteRecord(record) {
@@ -454,7 +612,7 @@ $("#mobile-widget").addEventListener("click", () => openDialog("widget-dialog"))
 $("#mobile-filter").addEventListener("change", (event) => { setFilter(event.target.value); render(); });
 $("#widget-add").addEventListener("click", () => { $("#widget-dialog").close(); input.focus(); });
 $("#open-feedback").addEventListener("click", () => openDialog("feedback-dialog"));
-$("#open-settings").addEventListener("click", () => openDialog("settings-dialog"));
+$("#open-settings").addEventListener("click", () => { hydrateAISettings(); openDialog("settings-dialog"); });
 document.querySelectorAll("[data-close]").forEach((button) => button.addEventListener("click", () => $("#" + button.dataset.close).close()));
 document.querySelectorAll("dialog").forEach((dialog) => dialog.addEventListener("click", (event) => { if (event.target === dialog) dialog.close(); }));
 
@@ -506,6 +664,66 @@ function saveSettings() {
   applyTheme();
   renderWidget();
 }
+
+function setConnectionStatus(message, kind = "") {
+  const status = $("#ai-connection-status");
+  const badge = $("#ai-connection-badge");
+  status.textContent = message;
+  status.className = "connection-status" + (kind ? " " + kind : "");
+  badge.className = "connection-badge" + (kind ? " " + kind : "");
+  badge.textContent = kind === "success" ? "已连接" : kind === "error" ? "连接失败" : hasAIConfiguration() ? "待测试" : "未配置";
+}
+
+function hydrateAISettings() {
+  $("#ai-endpoint").value = state.settings.aiEndpoint || DEFAULT_AI_ENDPOINT;
+  $("#ai-model").value = state.settings.aiModel || "";
+  $("#ai-api-key").value = getApiKey();
+  $("#ai-api-key").type = "password";
+  $("#toggle-api-key").textContent = "显示密钥";
+  setConnectionStatus(hasAIConfiguration() ? "配置已保存在本次会话中，可测试连接。" : "API Key 只保存在当前标签页，关闭后自动清除。", "");
+}
+
+function persistAIInputs() {
+  state.settings.aiEndpoint = $("#ai-endpoint").value.trim();
+  state.settings.aiModel = $("#ai-model").value.trim();
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(state.settings));
+  const key = $("#ai-api-key").value.trim();
+  if (key) sessionStorage.setItem(AI_KEY_SESSION_KEY, key);
+  else sessionStorage.removeItem(AI_KEY_SESSION_KEY);
+}
+
+$("#ai-endpoint").addEventListener("change", () => { persistAIInputs(); setConnectionStatus("配置已更新，请重新测试连接。", ""); });
+$("#ai-model").addEventListener("change", () => { persistAIInputs(); setConnectionStatus("配置已更新，请重新测试连接。", ""); });
+$("#ai-api-key").addEventListener("input", () => { persistAIInputs(); setConnectionStatus("API Key 已写入本次会话，请测试连接。", ""); });
+$("#toggle-api-key").addEventListener("click", () => {
+  const keyInput = $("#ai-api-key");
+  const showing = keyInput.type === "text";
+  keyInput.type = showing ? "password" : "text";
+  $("#toggle-api-key").textContent = showing ? "显示密钥" : "隐藏密钥";
+});
+$("#clear-api-key").addEventListener("click", () => {
+  sessionStorage.removeItem(AI_KEY_SESSION_KEY);
+  $("#ai-api-key").value = "";
+  setConnectionStatus("本次会话中的 API Key 已清除。", "");
+});
+$("#test-ai-connection").addEventListener("click", async () => {
+  const button = $("#test-ai-connection");
+  persistAIInputs();
+  button.disabled = true;
+  button.textContent = "正在连接…";
+  setConnectionStatus("正在向模型发送一条不含记录内容的测试消息…", "");
+  try {
+    await withAITimeout((signal) => callChatCompletions([{ role: "user", content: "请只回复 OK，用于验证 API 连接。" }], signal), 20000);
+    setConnectionStatus("连接成功，可以使用真实模型整理记录。", "success");
+    announce("模型连接成功");
+  } catch (error) {
+    setConnectionStatus(friendlyAIError(error), "error");
+  } finally {
+    button.disabled = false;
+    button.textContent = "测试连接";
+  }
+});
+
 $("#theme-select").addEventListener("change", (event) => { state.settings.theme = event.target.value; saveSettings(); });
 $("#privacy-toggle").addEventListener("change", (event) => { state.settings.privateWidget = event.target.checked; saveSettings(); announce(event.target.checked ? "小组件内容已隐藏" : "小组件内容已显示"); });
 
@@ -517,6 +735,7 @@ const fullDate = new Intl.DateTimeFormat("zh-CN", { month: "long", day: "numeric
 $("#current-date").textContent = fullDate.replace("星期", " · 星期");
 $("#widget-date").textContent = fullDate;
 applyTheme();
+hydrateAISettings();
 
 if (document.modelContext?.registerTool) {
   try {
