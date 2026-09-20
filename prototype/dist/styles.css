@@ -191,7 +191,6 @@ textarea::placeholder { color: #a3a7b3; }
 .editor-check { display: flex; align-items: center; gap: 5px; margin: 2px 0 18px; color: #656a75; font-size: .78rem; font-weight: 700; }
 .editor-check input { width: auto; }
 .organize-button { margin-top: 18px; }
-.clarification-block { border-left-color: #e2a52b; background: #fffaf0; }
 .detail-empty { min-height: 320px; display: grid; place-items: center; color: #858a95; font-size: .84rem; text-align: center; }
 .field-label { display: block; margin: 0 0 7px; font-size: .75rem; font-weight: 750; color: #656a75; }
 .full-width { width: 100%; }
@@ -307,7 +306,6 @@ textarea::placeholder { color: #a3a7b3; }
 :root[data-theme="dark"] .task-context strong { color: #e6e8ff; }
 :root[data-theme="dark"] .setting-security-note,
 :root[data-theme="dark"] .connection-badge { background: #2d2f34; color: #b8bbc4; }
-:root[data-theme="dark"] .clarification-block { background: #302a1d; }
 :root[data-theme="dark"] .connection-badge.success { background: #173c2d; color: #7ee0b4; }
 :root[data-theme="dark"] .connection-badge.error { background: #482521; color: #ffaaa0; }
 

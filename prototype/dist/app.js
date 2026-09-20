@@ -136,6 +136,17 @@ const toastMessage = $("#toast-message");
 const toastAction = $("#toast-action");
 
 const saveRecords = () => localStorage.setItem(STORAGE_KEY, JSON.stringify(state.records));
+const pendingClarifications = state.records.filter((record) => typeof record.clarification === "string" && record.clarification.trim());
+if (pendingClarifications.length) {
+  state.chatRecordId = pendingClarifications[0].id;
+  state.chatMessages = pendingClarifications.map((record) => ({
+    role: "assistant",
+    content: "关于“" + record.title + "”：" + record.clarification.trim(),
+    result: "需要确认",
+  }));
+  state.records.forEach((record) => { record.clarification = ""; });
+  saveRecords();
+}
 const getRecord = (id) => state.records.find((record) => record.id === id);
 const makeId = () => globalThis.crypto?.randomUUID?.() || "record-" + Date.now();
 const nowTime = () => new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());
@@ -410,17 +421,6 @@ function renderDetail() {
     detailContent.append(block);
   }
 
-  if (record.clarification) {
-    const clarification = document.createElement("section");
-    clarification.className = "result-block clarification-block";
-    const clarificationLabel = document.createElement("label");
-    clarificationLabel.textContent = "需要确认";
-    const clarificationText = document.createElement("p");
-    clarificationText.textContent = record.clarification;
-    clarification.append(clarificationLabel, clarificationText);
-    detailContent.append(clarification);
-  }
-
   const actions = document.createElement("div");
   actions.className = "detail-actions";
   const collaborate = document.createElement("button");
@@ -548,7 +548,11 @@ async function organizeRecord(record, button) {
   delete state.aiErrors[record.id];
   try {
     const result = await requestAIOrganization(record);
-    applyAIOrganization(record, result);
+    const clarification = applyAIOrganization(record, result);
+    if (clarification) {
+      setChatContext(record.id, false);
+      addChatMessage("assistant", clarification, "需要确认");
+    }
     saveRecords();
     setFilter(!record.dueDate ? "inbox" : record.dueDate > todayISO ? "planned" : "today");
     announce("AI 整理完成");
@@ -703,13 +707,14 @@ function applyTaskPayload(record, result, allowScheduleClear = false) {
     record.dueTime = "";
     record.reminder = false;
   }
-  if (Object.hasOwn(result, "clarification")) record.clarification = clarification;
+  record.clarification = "";
   if (typeof result.completed === "boolean") record.completed = result.completed;
   record.organized = true;
+  return clarification;
 }
 
 function applyAIOrganization(record, result) {
-  applyTaskPayload(record, result);
+  return applyTaskPayload(record, result);
 }
 
 async function requestAITaskCollaboration(userMessage, referencedRecord) {
@@ -756,6 +761,8 @@ async function requestAITaskCollaboration(userMessage, referencedRecord) {
 function applyChatResult(result, userMessage, referencedRecord) {
   const action = ["create", "update", "none"].includes(result.action) ? result.action : "none";
   const task = result.task && typeof result.task === "object" ? result.task : {};
+  let clarification = typeof task.clarification === "string" ? task.clarification.trim().slice(0, 180) : "";
+  if (!clarification && typeof result.clarification === "string") clarification = result.clarification.trim().slice(0, 180);
   let record = referencedRecord;
   let resultLabel = "没有修改任务";
   if (action === "create") {
@@ -776,11 +783,11 @@ function applyChatResult(result, userMessage, referencedRecord) {
       clarification: "",
       points: [],
     };
-    applyTaskPayload(record, task, true);
+    clarification = applyTaskPayload(record, task, true) || clarification;
     state.records.unshift(record);
     resultLabel = "已创建任务 · " + record.title;
   } else if (action === "update" && record) {
-    applyTaskPayload(record, task, true);
+    clarification = applyTaskPayload(record, task, true) || clarification;
     resultLabel = "已更新任务 · " + record.title;
   }
   if (record && action !== "none") {
@@ -790,7 +797,7 @@ function applyChatResult(result, userMessage, referencedRecord) {
     saveRecords();
     setFilter(record.completed ? "completed" : !record.dueDate ? "inbox" : record.dueDate > todayISO ? "planned" : "today");
   }
-  return { record, resultLabel, changed: action !== "none" && Boolean(record) };
+  return { record, resultLabel, changed: action !== "none" && Boolean(record), clarification };
 }
 
 function friendlyAIError(error) {
@@ -906,7 +913,8 @@ form.addEventListener("submit", async (event) => {
     const result = await requestAITaskCollaboration(userMessage, referencedRecord);
     state.chatMessages = state.chatMessages.filter((message) => !message.pending);
     const applied = applyChatResult(result, userMessage, referencedRecord);
-    const reply = typeof result.reply === "string" && result.reply.trim() ? result.reply.trim().slice(0, 600) : applied.changed ? "已经按你的要求处理好了。" : "我还需要更多信息才能处理。";
+    const baseReply = typeof result.reply === "string" && result.reply.trim() ? result.reply.trim().slice(0, 600) : applied.changed ? "已经按你的要求处理好了。" : "我还需要更多信息才能处理。";
+    const reply = applied.clarification && !baseReply.includes(applied.clarification) ? baseReply + "\n" + applied.clarification : baseReply;
     addChatMessage("assistant", reply, applied.resultLabel);
     if (applied.changed) {
       $("#detail-panel").classList.add("active");

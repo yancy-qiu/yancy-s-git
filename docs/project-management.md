@@ -2,7 +2,7 @@
 
 > 状态：持续维护
 >
-> 版本：V1.11
+> 版本：V1.12
 >
 > 更新时间：2026-09-21
 >
@@ -94,11 +94,11 @@
 | `AGENTS.md` | 当前 | 生效中 | 项目工作规则与 Git 约束 |
 | `docs/README.md` | 当前 | 生效中 | 文档目录和命名约定 |
 | `docs/project-plan.md` | V0.7 | 草案 | 项目目标、范围、阶段和验收标准 |
-| `docs/project-management.md` | V1.11 | 持续维护 | 项目状态、变更记录和下一步 |
+| `docs/project-management.md` | V1.12 | 持续维护 | 项目状态、变更记录和下一步 |
 | `docs/product/mvp-prd.md` | V0.2 | 原型验证 | MVP 用户流程、范围、规则和验证任务 |
-| `docs/design/mvp-prototype.md` | V0.2 | 可用性验证 | 页面结构、交互、视觉规范和原型边界 |
+| `docs/design/mvp-prototype.md` | V0.3 | 可用性验证 | 页面结构、交互、视觉规范和原型边界 |
 | `docs/design/mvp-prototype-validation.md` | V0.1 | 已通过内部验收 | MVP 功能、视觉、响应式和工具接口验收记录 |
-| `docs/development/ai-model-api.md` | V0.4 | 浏览器原型已实现 | 多供应商模型协议、对话式任务操作、密钥边界和验收结果 |
+| `docs/development/ai-model-api.md` | V0.5 | 浏览器原型已实现 | 多供应商模型协议、对话式任务操作、密钥边界和验收结果 |
 | `docs/decisions/2026-08-05-product-name.md` | V1.0 | 已确认 | 品牌名称与宣传语决策记录 |
 | `docs/decisions/2026-09-17-apple-widget-platform.md` | V1.1 | 已确认 | Mac 首发与小组件入口决策记录 |
 | `docs/decisions/2026-09-17-browser-prototype-first.md` | V1.0 | 已确认 | 先用浏览器原型验证，再开发 Mac 原生应用 |
@@ -185,6 +185,7 @@
 | 2026-09-20 | 扩展 OpenAI、Claude、DeepSeek、智谱 GLM 和自定义接口，按供应商隔离配置与会话密钥 | 完成，Chat Completions 与 Anthropic Messages 两种协议验收通过 |
 | 2026-09-21 | 修复 DeepSeek 真实 API 测试返回 400 的可诊断性，更新当前模型名、旧配置迁移和安全错误详情 | 完成，等待使用 `deepseek-flash` 复测 |
 | 2026-09-21 | 将首页快速记录升级为 AI 任务协作，支持引用任意任务并通过对话直接创建或编辑 | 完成，进入用户验证 |
+| 2026-09-21 | 将 AI 确认问题从任务详情移至顶部协作对话，并清理历史记录中的残留确认问题 | 完成 |
 
 ## 9. 管理文档更新规则
 
