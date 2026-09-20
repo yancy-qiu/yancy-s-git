@@ -2,9 +2,9 @@
 
 > 状态：持续维护
 >
-> 版本：V1.9
+> 版本：V1.10
 >
-> 更新时间：2026-09-20
+> 更新时间：2026-09-21
 >
 > 项目负责人：Yancy
 >
@@ -98,7 +98,7 @@
 | `docs/product/mvp-prd.md` | V0.1 | 原型验证 | MVP 用户流程、范围、规则和验证任务 |
 | `docs/design/mvp-prototype.md` | V0.1 | 可用性验证 | 页面结构、交互、视觉规范和原型边界 |
 | `docs/design/mvp-prototype-validation.md` | V0.1 | 已通过内部验收 | MVP 功能、视觉、响应式和工具接口验收记录 |
-| `docs/development/ai-model-api.md` | V0.2 | 浏览器原型已实现 | 多供应商模型协议、密钥边界、结构化输出和验收结果 |
+| `docs/development/ai-model-api.md` | V0.3 | 浏览器原型已实现 | 多供应商模型协议、密钥边界、结构化输出和验收结果 |
 | `docs/decisions/2026-08-05-product-name.md` | V1.0 | 已确认 | 品牌名称与宣传语决策记录 |
 | `docs/decisions/2026-09-17-apple-widget-platform.md` | V1.1 | 已确认 | Mac 首发与小组件入口决策记录 |
 | `docs/decisions/2026-09-17-browser-prototype-first.md` | V1.0 | 已确认 | 先用浏览器原型验证，再开发 Mac 原生应用 |
@@ -183,6 +183,7 @@
 | 2026-09-20 | 接入用户自有 OpenAI 兼容模型 API，新增会话密钥、连接测试、自动分类与时间提取 | 完成，本地模拟接口验收通过，等待真实模型验证 |
 | 2026-09-20 | 根据项目负责人确认，将浏览器原型改为任何持有链接的人都可访问 | 完成，线上入口已公开 |
 | 2026-09-20 | 扩展 OpenAI、Claude、DeepSeek、智谱 GLM 和自定义接口，按供应商隔离配置与会话密钥 | 完成，Chat Completions 与 Anthropic Messages 两种协议验收通过 |
+| 2026-09-21 | 修复 DeepSeek 真实 API 测试返回 400 的可诊断性，更新当前模型名、旧配置迁移和安全错误详情 | 完成，等待使用 `deepseek-flash` 复测 |
 
 ## 9. 管理文档更新规则
 

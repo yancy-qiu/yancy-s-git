@@ -1,8 +1,8 @@
 # AI 模型 API 接入说明
 
-> 版本：V0.2
+> 版本：V0.3
 >
-> 更新时间：2026-09-20
+> 更新时间：2026-09-21
 >
 > 状态：浏览器原型已实现
 
@@ -34,6 +34,8 @@ API Key 不写入代码、Git、日志或 WebMCP 输出。界面默认隐藏密�
 | 自定义接口 | 用户填写 | OpenAI 兼容 Chat Completions |
 
 所有默认地址都允许用户修改。每个供应商分别保留 API 地址、模型名称和当前会话中的 API Key，切换供应商不会串用密钥。
+
+DeepSeek 当前模型名称为 `deepseek-flash` 和 `deepseek-v4-pro`。界面默认选择 `deepseek-flash`，并把历史配置中的 `deepseek-chat`、`deepseek-reasoner` 和旧 Flash 名称迁移到该模型。DeepSeek 返回 400 时，界面会显示经过密钥脱敏的官方错误信息和可用模型提示。
 
 OpenAI、DeepSeek、智谱和自定义接口使用以下结构：
 
@@ -97,4 +99,6 @@ Claude / Anthropic 使用独立适配：
 - 整理后记录会自动进入正确的“计划”视图。
 - 浏览器控制台无错误。
 
-待项目负责人使用自己的模型服务完成一次真实接口验证。
+待项目负责人使用 `deepseek-flash` 完成一次真实成功验证。
+
+2026-09-21 项目负责人使用 DeepSeek 真实 API 验证时遇到 HTTP 400。依据 DeepSeek 当前官方模型列表，原型已更新模型候选、旧名称迁移和安全错误详情，等待使用 `deepseek-flash` 复测。

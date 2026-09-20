@@ -10,6 +10,8 @@ const aiProviders = {
     name: "OpenAI",
     protocol: "openai",
     endpoint: DEFAULT_AI_ENDPOINT,
+    defaultModel: "",
+    modelOptions: [],
     modelPlaceholder: "填写 OpenAI 模型名称",
     keyPlaceholder: "sk-…",
     note: "OpenAI 使用 Chat Completions 接口。API Key 仅保存在当前标签页。",
@@ -18,6 +20,8 @@ const aiProviders = {
     name: "Claude / Anthropic",
     protocol: "anthropic",
     endpoint: "https://api.anthropic.com/v1/messages",
+    defaultModel: "",
+    modelOptions: [],
     modelPlaceholder: "填写 Claude 模型名称",
     keyPlaceholder: "sk-ant-…",
     note: "这里接入的是 Claude 的 Anthropic Messages API，适用于拥有 Anthropic API Key 的 Claude Code 用户。",
@@ -26,7 +30,9 @@ const aiProviders = {
     name: "DeepSeek",
     protocol: "openai",
     endpoint: "https://api.deepseek.com/chat/completions",
-    modelPlaceholder: "填写 DeepSeek 模型名称",
+    defaultModel: "deepseek-flash",
+    modelOptions: ["deepseek-flash", "deepseek-v4-pro"],
+    modelPlaceholder: "推荐使用 deepseek-flash",
     keyPlaceholder: "填写 DeepSeek API Key",
     note: "DeepSeek 使用兼容 Chat Completions 的请求格式；请填写控制台中可用的模型名称。",
   },
@@ -34,6 +40,8 @@ const aiProviders = {
     name: "智谱 GLM",
     protocol: "openai",
     endpoint: "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+    defaultModel: "",
+    modelOptions: [],
     modelPlaceholder: "填写 GLM 模型名称",
     keyPlaceholder: "填写智谱 API Key",
     note: "智谱 GLM 使用兼容 Chat Completions 的请求格式；请填写开放平台中的模型名称。",
@@ -42,6 +50,8 @@ const aiProviders = {
     name: "自定义接口",
     protocol: "openai",
     endpoint: "",
+    defaultModel: "",
+    modelOptions: [],
     modelPlaceholder: "填写接口支持的模型名称",
     keyPlaceholder: "填写 API Key",
     note: "自定义服务需兼容 OpenAI Chat Completions 的请求与返回结构。",
@@ -89,6 +99,10 @@ const loadSettings = () => {
         model: saved.aiModel || "",
       };
     }
+    if (profiles.deepseek) {
+      const deprecatedModels = ["deepseek-chat", "deepseek-reasoner", "deepseek-v4-flash"];
+      if (!profiles.deepseek.model || deprecatedModels.includes(profiles.deepseek.model)) profiles.deepseek.model = "deepseek-flash";
+    }
     return { theme: saved.theme || defaults.theme, privateWidget: Boolean(saved.privateWidget), aiProvider: aiProviders[inferredProvider] ? inferredProvider : "custom", aiProfiles: profiles };
   } catch { return defaults; }
 };
@@ -115,7 +129,7 @@ const nowTime = () => new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute
 function getAIConfig(provider = state.settings.aiProvider) {
   const providerDefinition = aiProviders[provider] || aiProviders.custom;
   const profile = state.settings.aiProfiles[provider] || {};
-  return { provider, ...providerDefinition, endpoint: profile.endpoint ?? providerDefinition.endpoint, model: profile.model || "" };
+  return { provider, ...providerDefinition, endpoint: profile.endpoint ?? providerDefinition.endpoint, model: profile.model || providerDefinition.defaultModel || "" };
 }
 const getApiKey = (provider = state.settings.aiProvider) => sessionStorage.getItem(AI_KEY_SESSION_PREFIX + provider) || "";
 const hasAIConfiguration = () => {
@@ -473,6 +487,8 @@ async function callModel(messages, signal, maxTokens = 1024) {
   if (!response.ok) {
     const error = new Error("API_ERROR");
     error.httpStatus = response.status;
+    error.provider = config.provider;
+    error.providerMessage = sanitizeProviderError(body?.error?.message || body?.message || body?.error?.msg || "", apiKey);
     throw error;
   }
   const content = config.protocol === "anthropic"
@@ -484,6 +500,17 @@ async function callModel(messages, signal, maxTokens = 1024) {
     if (combined) return combined;
   }
   throw new Error("INVALID_RESPONSE");
+}
+
+function sanitizeProviderError(value, apiKey) {
+  if (typeof value !== "string") return "";
+  return value
+    .replaceAll(apiKey, "••••")
+    .replace(/Bearer\s+\S+/gi, "Bearer ••••")
+    .replace(/sk-[A-Za-z0-9_-]+/g, "sk-••••")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 220);
 }
 
 async function withAITimeout(request, milliseconds = 30000) {
@@ -566,7 +593,13 @@ function friendlyAIError(error) {
   if (error?.message === "MISSING_MODEL") return "请先填写模型名称。";
   if (error?.message === "MISSING_KEY") return "请先填写 API Key。";
   if (error?.message === "INVALID_RESPONSE" || error?.message === "INVALID_JSON") return "模型返回的内容无法识别，请重试或更换模型。";
+  if (error?.message === "API_ERROR" && error.httpStatus === 400 && error.provider === "deepseek") {
+    const detail = error.providerMessage ? "“" + error.providerMessage + "” " : "";
+    return "DeepSeek 拒绝请求（400）：" + detail + "请使用 deepseek-flash 或 deepseek-v4-pro。";
+  }
+  if (error?.message === "API_ERROR" && error.httpStatus === 400) return "请求参数被模型服务拒绝（400）" + (error.providerMessage ? "：" + error.providerMessage : "，请检查模型名称。");
   if (error?.message === "API_ERROR" && [401, 403].includes(error.httpStatus)) return "认证失败，请检查 API Key 和模型权限。";
+  if (error?.message === "API_ERROR" && error.httpStatus === 402) return "模型账户余额不足，请先充值或检查额度。";
   if (error?.message === "API_ERROR" && error.httpStatus === 404) return "API 地址或模型名称不存在。";
   if (error?.message === "API_ERROR" && error.httpStatus === 429) return "请求过于频繁或额度不足，请稍后重试。";
   if (error?.message === "API_ERROR") return "模型服务返回错误（HTTP " + error.httpStatus + "）。";
@@ -767,6 +800,13 @@ function hydrateAISettings() {
   $("#ai-endpoint").value = config.endpoint;
   $("#ai-model").value = config.model;
   $("#ai-model").placeholder = config.modelPlaceholder;
+  const modelOptions = $("#ai-model-options");
+  modelOptions.replaceChildren();
+  config.modelOptions.forEach((model) => {
+    const option = document.createElement("option");
+    option.value = model;
+    modelOptions.append(option);
+  });
   $("#ai-api-key").value = getApiKey();
   $("#ai-api-key").placeholder = config.keyPlaceholder;
   $("#ai-api-key").type = "password";
@@ -792,7 +832,7 @@ $("#ai-provider").addEventListener("change", (event) => {
   persistAIInputs();
   state.settings.aiProvider = event.target.value;
   if (!state.settings.aiProfiles[state.settings.aiProvider]) {
-    state.settings.aiProfiles[state.settings.aiProvider] = { endpoint: aiProviders[state.settings.aiProvider].endpoint, model: "" };
+    state.settings.aiProfiles[state.settings.aiProvider] = { endpoint: aiProviders[state.settings.aiProvider].endpoint, model: aiProviders[state.settings.aiProvider].defaultModel || "" };
   }
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(state.settings));
   hydrateAISettings();
