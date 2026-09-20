@@ -1,6 +1,6 @@
 # AI 模型 API 接入说明
 
-> 版本：V0.1
+> 版本：V0.2
 >
 > 更新时间：2026-09-20
 >
@@ -8,7 +8,7 @@
 
 ## 1. 目标
 
-浏览器原型允许用户填写自己的 OpenAI 兼容 Chat Completions 接口、模型名称和 API Key，并由模型完成记录标题提炼、自动分类、摘要、行动项、时间、优先级和提醒建议。
+浏览器原型允许用户选择 OpenAI、Claude / Anthropic、DeepSeek、智谱 GLM 或自定义 OpenAI 兼容接口，填写模型名称和 API Key，并由模型完成记录标题提炼、自动分类、摘要、行动项、时间、优先级和提醒建议。
 
 当前实现用于验证真实模型整理流程。正式 Mac 版应把密钥迁移到 Keychain，并由原生网络层调用模型服务。
 
@@ -18,20 +18,36 @@
 | --- | --- | --- |
 | API 地址 | `localStorage` | 保留到用户清理站点数据 |
 | 模型名称 | `localStorage` | 保留到用户清理站点数据 |
-| API Key | `sessionStorage` | 当前标签页会话，关闭后清除 |
+| API Key | `sessionStorage` | 按供应商分别保存于当前标签页会话，关闭后清除 |
 | 记录内容 | `localStorage` | 仅保存在当前浏览器 |
 
 API Key 不写入代码、Git、日志或 WebMCP 输出。界面默认隐藏密钥，并提供清除入口。
 
-## 3. 请求协议
+## 3. 供应商与请求协议
 
-原型向用户配置的完整 API 地址发送 `POST` 请求：
+| 供应商 | 默认 API 地址 | 协议 |
+| --- | --- | --- |
+| OpenAI | `https://api.openai.com/v1/chat/completions` | Chat Completions |
+| Claude / Anthropic | `https://api.anthropic.com/v1/messages` | Anthropic Messages API |
+| DeepSeek | `https://api.deepseek.com/chat/completions` | OpenAI 兼容 Chat Completions |
+| 智谱 GLM | `https://open.bigmodel.cn/api/paas/v4/chat/completions` | OpenAI 兼容 Chat Completions |
+| 自定义接口 | 用户填写 | OpenAI 兼容 Chat Completions |
+
+所有默认地址都允许用户修改。每个供应商分别保留 API 地址、模型名称和当前会话中的 API Key，切换供应商不会串用密钥。
+
+OpenAI、DeepSeek、智谱和自定义接口使用以下结构：
 
 - 请求头：`Content-Type: application/json`、`Authorization: Bearer <API Key>`。
 - 请求体：`model` 与 `messages`。
 - 返回内容：读取 `choices[0].message.content`。
 
-此结构与官方 OpenAI Chat Completions 示例一致。参考：[OpenAI API 从 Chat Completions 迁移到 Responses 的说明](https://developers.openai.com/api/docs/guides/migrate-to-responses)。
+Claude / Anthropic 使用独立适配：
+
+- 请求头：`x-api-key`、`anthropic-version: 2023-06-01` 和浏览器直连标识。
+- 请求体：`model`、`max_tokens`、顶层 `system` 与 `messages`。
+- 返回内容：合并 `content` 中的文本块。
+
+协议参考：[OpenAI Chat Completions](https://developers.openai.com/api/reference/cli/resources/chat)、[Anthropic Messages API](https://platform.claude.com/docs/en/api/messages)、[DeepSeek Chat Completions](https://api-docs.deepseek.com/api/create-chat-completion/) 和[智谱开放文档](https://docs.bigmodel.cn/)。
 
 测试连接只发送固定短句，不发送用户记录。执行“用 AI 整理”时，才会发送当前记录的标题、正文和已有时间信息。
 
@@ -71,10 +87,12 @@ API Key 不写入代码、Git、日志或 WebMCP 输出。界面默认隐藏密�
 
 ## 7. 验收结果
 
-2026-09-20 使用本地模拟 OpenAI 兼容接口完成端到端验证：
+2026-09-20 使用本地模拟接口完成两种协议的端到端验证：
 
-- 模型设置弹窗、密钥隐藏和会话存储正常。
-- 测试连接成功态和不安全 HTTP 地址拦截正常。
+- OpenAI 兼容 Chat Completions 与 Anthropic Messages API 均可完成连接测试和真实整理。
+- 供应商切换、默认地址、独立密钥、密钥隐藏和会话存储正常。
+- DeepSeek 与智谱 GLM 默认地址正确，切换后不会复用其他供应商的密钥。
+- 不安全 HTTP 地址拦截正常。
 - 模型结果可更新标题、类型、摘要、行动项、日期、时间、优先级和提醒。
 - 整理后记录会自动进入正确的“计划”视图。
 - 浏览器控制台无错误。

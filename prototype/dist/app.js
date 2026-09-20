@@ -1,8 +1,52 @@
 const STORAGE_KEY = "qingji.prototype.records.v1";
 const FEEDBACK_KEY = "qingji.prototype.feedback.v1";
 const SETTINGS_KEY = "qingji.prototype.settings.v1";
-const AI_KEY_SESSION_KEY = "qingji.prototype.ai-key.v1";
+const LEGACY_AI_KEY_SESSION_KEY = "qingji.prototype.ai-key.v1";
+const AI_KEY_SESSION_PREFIX = "qingji.prototype.ai-key.v2.";
 const DEFAULT_AI_ENDPOINT = "https://api.openai.com/v1/chat/completions";
+
+const aiProviders = {
+  openai: {
+    name: "OpenAI",
+    protocol: "openai",
+    endpoint: DEFAULT_AI_ENDPOINT,
+    modelPlaceholder: "填写 OpenAI 模型名称",
+    keyPlaceholder: "sk-…",
+    note: "OpenAI 使用 Chat Completions 接口。API Key 仅保存在当前标签页。",
+  },
+  anthropic: {
+    name: "Claude / Anthropic",
+    protocol: "anthropic",
+    endpoint: "https://api.anthropic.com/v1/messages",
+    modelPlaceholder: "填写 Claude 模型名称",
+    keyPlaceholder: "sk-ant-…",
+    note: "这里接入的是 Claude 的 Anthropic Messages API，适用于拥有 Anthropic API Key 的 Claude Code 用户。",
+  },
+  deepseek: {
+    name: "DeepSeek",
+    protocol: "openai",
+    endpoint: "https://api.deepseek.com/chat/completions",
+    modelPlaceholder: "填写 DeepSeek 模型名称",
+    keyPlaceholder: "填写 DeepSeek API Key",
+    note: "DeepSeek 使用兼容 Chat Completions 的请求格式；请填写控制台中可用的模型名称。",
+  },
+  zhipu: {
+    name: "智谱 GLM",
+    protocol: "openai",
+    endpoint: "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+    modelPlaceholder: "填写 GLM 模型名称",
+    keyPlaceholder: "填写智谱 API Key",
+    note: "智谱 GLM 使用兼容 Chat Completions 的请求格式；请填写开放平台中的模型名称。",
+  },
+  custom: {
+    name: "自定义接口",
+    protocol: "openai",
+    endpoint: "",
+    modelPlaceholder: "填写接口支持的模型名称",
+    keyPlaceholder: "填写 API Key",
+    note: "自定义服务需兼容 OpenAI Chat Completions 的请求与返回结构。",
+  },
+};
 
 const typeNames = { auto: "自动", task: "任务", meeting: "会议", progress: "进展", need: "需求" };
 const priorityNames = { high: "重要", normal: "普通", low: "稍后" };
@@ -34,11 +78,26 @@ const loadRecords = () => {
 };
 
 const loadSettings = () => {
-  const defaults = { theme: "system", privateWidget: false, aiEndpoint: DEFAULT_AI_ENDPOINT, aiModel: "" };
-  try { return { ...defaults, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}") }; }
-  catch { return defaults; }
+  const defaults = { theme: "system", privateWidget: false, aiProvider: "openai", aiProfiles: {} };
+  try {
+    const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
+    const inferredProvider = saved.aiProvider || (saved.aiEndpoint && saved.aiEndpoint !== DEFAULT_AI_ENDPOINT ? "custom" : "openai");
+    const profiles = { ...(saved.aiProfiles || {}) };
+    if (!profiles[inferredProvider]) {
+      profiles[inferredProvider] = {
+        endpoint: saved.aiEndpoint || aiProviders[inferredProvider]?.endpoint || "",
+        model: saved.aiModel || "",
+      };
+    }
+    return { theme: saved.theme || defaults.theme, privateWidget: Boolean(saved.privateWidget), aiProvider: aiProviders[inferredProvider] ? inferredProvider : "custom", aiProfiles: profiles };
+  } catch { return defaults; }
 };
 const state = { records: loadRecords(), selectedId: null, filter: "today", captureType: "auto", rating: 0, deletedRecord: null, settings: loadSettings(), aiErrors: {} };
+const legacySessionApiKey = sessionStorage.getItem(LEGACY_AI_KEY_SESSION_KEY);
+if (legacySessionApiKey && !sessionStorage.getItem(AI_KEY_SESSION_PREFIX + state.settings.aiProvider)) {
+  sessionStorage.setItem(AI_KEY_SESSION_PREFIX + state.settings.aiProvider, legacySessionApiKey);
+}
+sessionStorage.removeItem(LEGACY_AI_KEY_SESSION_KEY);
 const $ = (selector) => document.querySelector(selector);
 const recordsElement = $("#records");
 const emptyState = $("#empty-state");
@@ -53,8 +112,16 @@ const saveRecords = () => localStorage.setItem(STORAGE_KEY, JSON.stringify(state
 const getRecord = (id) => state.records.find((record) => record.id === id);
 const makeId = () => globalThis.crypto?.randomUUID?.() || "record-" + Date.now();
 const nowTime = () => new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());
-const getApiKey = () => sessionStorage.getItem(AI_KEY_SESSION_KEY) || "";
-const hasAIConfiguration = () => Boolean(state.settings.aiEndpoint?.trim() && state.settings.aiModel?.trim() && getApiKey());
+function getAIConfig(provider = state.settings.aiProvider) {
+  const providerDefinition = aiProviders[provider] || aiProviders.custom;
+  const profile = state.settings.aiProfiles[provider] || {};
+  return { provider, ...providerDefinition, endpoint: profile.endpoint ?? providerDefinition.endpoint, model: profile.model || "" };
+}
+const getApiKey = (provider = state.settings.aiProvider) => sessionStorage.getItem(AI_KEY_SESSION_PREFIX + provider) || "";
+const hasAIConfiguration = () => {
+  const config = getAIConfig();
+  return Boolean(config.endpoint?.trim() && config.model?.trim() && getApiKey());
+};
 
 function announce(message, action = null) {
   toastMessage.textContent = message;
@@ -373,15 +440,33 @@ function validatedAIEndpoint(value) {
   return url.toString();
 }
 
-async function callChatCompletions(messages, signal) {
-  const endpoint = validatedAIEndpoint(state.settings.aiEndpoint);
+async function callModel(messages, signal, maxTokens = 1024) {
+  const config = getAIConfig();
+  const endpoint = validatedAIEndpoint(config.endpoint);
   const apiKey = getApiKey();
-  if (!state.settings.aiModel.trim()) throw new Error("MISSING_MODEL");
+  if (!config.model.trim()) throw new Error("MISSING_MODEL");
   if (!apiKey) throw new Error("MISSING_KEY");
+  const headers = { "Content-Type": "application/json" };
+  let requestBody;
+  if (config.protocol === "anthropic") {
+    headers["x-api-key"] = apiKey;
+    headers["anthropic-version"] = "2023-06-01";
+    headers["anthropic-dangerous-direct-browser-access"] = "true";
+    const system = messages.filter((message) => message.role === "system").map((message) => message.content).join("\n");
+    requestBody = {
+      model: config.model.trim(),
+      max_tokens: maxTokens,
+      system,
+      messages: messages.filter((message) => message.role !== "system"),
+    };
+  } else {
+    headers.Authorization = "Bearer " + apiKey;
+    requestBody = { model: config.model.trim(), messages };
+  }
   const response = await fetch(endpoint, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: "Bearer " + apiKey },
-    body: JSON.stringify({ model: state.settings.aiModel.trim(), messages }),
+    headers,
+    body: JSON.stringify(requestBody),
     signal,
   });
   const body = await response.json().catch(() => ({}));
@@ -390,7 +475,9 @@ async function callChatCompletions(messages, signal) {
     error.httpStatus = response.status;
     throw error;
   }
-  const content = body?.choices?.[0]?.message?.content;
+  const content = config.protocol === "anthropic"
+    ? body?.content?.filter((item) => item?.type === "text").map((item) => item.text).join("")
+    : body?.choices?.[0]?.message?.content;
   if (typeof content === "string" && content.trim()) return content.trim();
   if (Array.isArray(content)) {
     const combined = content.map((item) => typeof item === "string" ? item : item?.text || "").join("").trim();
@@ -442,10 +529,10 @@ async function requestAIOrganization(record) {
     "当前时间：" + (record.dueTime || "未设置"),
     "当前优先级：" + record.priority,
   ].join("\n");
-  const content = await withAITimeout((signal) => callChatCompletions([
+  const content = await withAITimeout((signal) => callModel([
     { role: "system", content: systemPrompt },
     { role: "user", content: userPrompt },
-  ], signal));
+  ], signal, 1024));
   return parseJSONObject(content);
 }
 
@@ -675,23 +762,42 @@ function setConnectionStatus(message, kind = "") {
 }
 
 function hydrateAISettings() {
-  $("#ai-endpoint").value = state.settings.aiEndpoint || DEFAULT_AI_ENDPOINT;
-  $("#ai-model").value = state.settings.aiModel || "";
+  const config = getAIConfig();
+  $("#ai-provider").value = config.provider;
+  $("#ai-endpoint").value = config.endpoint;
+  $("#ai-model").value = config.model;
+  $("#ai-model").placeholder = config.modelPlaceholder;
   $("#ai-api-key").value = getApiKey();
+  $("#ai-api-key").placeholder = config.keyPlaceholder;
   $("#ai-api-key").type = "password";
   $("#toggle-api-key").textContent = "显示密钥";
+  $("#ai-provider-note").textContent = config.note + " 使用 AI 整理时会发送当前记录；公开接口需使用 HTTPS 并允许跨域请求。";
   setConnectionStatus(hasAIConfiguration() ? "配置已保存在本次会话中，可测试连接。" : "API Key 只保存在当前标签页，关闭后自动清除。", "");
 }
 
 function persistAIInputs() {
-  state.settings.aiEndpoint = $("#ai-endpoint").value.trim();
-  state.settings.aiModel = $("#ai-model").value.trim();
+  const provider = state.settings.aiProvider;
+  state.settings.aiProfiles[provider] = {
+    endpoint: $("#ai-endpoint").value.trim(),
+    model: $("#ai-model").value.trim(),
+  };
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(state.settings));
   const key = $("#ai-api-key").value.trim();
-  if (key) sessionStorage.setItem(AI_KEY_SESSION_KEY, key);
-  else sessionStorage.removeItem(AI_KEY_SESSION_KEY);
+  if (key) sessionStorage.setItem(AI_KEY_SESSION_PREFIX + provider, key);
+  else sessionStorage.removeItem(AI_KEY_SESSION_PREFIX + provider);
+  if (provider === "openai") sessionStorage.removeItem(LEGACY_AI_KEY_SESSION_KEY);
 }
 
+$("#ai-provider").addEventListener("change", (event) => {
+  persistAIInputs();
+  state.settings.aiProvider = event.target.value;
+  if (!state.settings.aiProfiles[state.settings.aiProvider]) {
+    state.settings.aiProfiles[state.settings.aiProvider] = { endpoint: aiProviders[state.settings.aiProvider].endpoint, model: "" };
+  }
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(state.settings));
+  hydrateAISettings();
+  setConnectionStatus("已切换到 " + getAIConfig().name + "，请填写模型名称和 API Key。", "");
+});
 $("#ai-endpoint").addEventListener("change", () => { persistAIInputs(); setConnectionStatus("配置已更新，请重新测试连接。", ""); });
 $("#ai-model").addEventListener("change", () => { persistAIInputs(); setConnectionStatus("配置已更新，请重新测试连接。", ""); });
 $("#ai-api-key").addEventListener("input", () => { persistAIInputs(); setConnectionStatus("API Key 已写入本次会话，请测试连接。", ""); });
@@ -702,7 +808,8 @@ $("#toggle-api-key").addEventListener("click", () => {
   $("#toggle-api-key").textContent = showing ? "显示密钥" : "隐藏密钥";
 });
 $("#clear-api-key").addEventListener("click", () => {
-  sessionStorage.removeItem(AI_KEY_SESSION_KEY);
+  sessionStorage.removeItem(AI_KEY_SESSION_PREFIX + state.settings.aiProvider);
+  if (state.settings.aiProvider === "openai") sessionStorage.removeItem(LEGACY_AI_KEY_SESSION_KEY);
   $("#ai-api-key").value = "";
   setConnectionStatus("本次会话中的 API Key 已清除。", "");
 });
@@ -711,10 +818,10 @@ $("#test-ai-connection").addEventListener("click", async () => {
   persistAIInputs();
   button.disabled = true;
   button.textContent = "正在连接…";
-  setConnectionStatus("正在向模型发送一条不含记录内容的测试消息…", "");
+  setConnectionStatus("正在向 " + getAIConfig().name + " 发送一条不含记录内容的测试消息…", "");
   try {
-    await withAITimeout((signal) => callChatCompletions([{ role: "user", content: "请只回复 OK，用于验证 API 连接。" }], signal), 20000);
-    setConnectionStatus("连接成功，可以使用真实模型整理记录。", "success");
+    await withAITimeout((signal) => callModel([{ role: "user", content: "请只回复 OK，用于验证 API 连接。" }], signal, 32), 20000);
+    setConnectionStatus(getAIConfig().name + " 连接成功，可以使用真实模型整理记录。", "success");
     announce("模型连接成功");
   } catch (error) {
     setConnectionStatus(friendlyAIError(error), "error");

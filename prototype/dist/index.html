@@ -14,7 +14,7 @@
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%234657e8'/%3E%3Cpath d='M19 18h26v7H19zm0 13h19v7H19zm0 13h13v7H19z' fill='white'/%3E%3C/svg%3E"
     />
     <title>轻记 · 交互原型</title>
-    <link rel="stylesheet" href="./styles.css?v=3" />
+    <link rel="stylesheet" href="./styles.css?v=4" />
   </head>
   <body>
     <main class="stage">
@@ -123,17 +123,18 @@
       <div class="settings-content">
         <section class="ai-settings">
           <div class="setting-section-head">
-            <div><strong>AI 模型</strong><p>接入支持 Chat Completions 的 OpenAI 兼容接口。</p></div>
+            <div><strong>AI 模型</strong><p>支持 OpenAI、Claude、DeepSeek、智谱 GLM 和自定义接口。</p></div>
             <span class="connection-badge" id="ai-connection-badge">未配置</span>
           </div>
           <div class="ai-fields">
+            <label class="field-label" for="ai-provider">模型服务<select id="ai-provider"><option value="openai">OpenAI</option><option value="anthropic">Claude / Anthropic</option><option value="deepseek">DeepSeek</option><option value="zhipu">智谱 GLM</option><option value="custom">自定义 OpenAI 兼容接口</option></select></label>
             <label class="field-label" for="ai-endpoint">API 地址<input id="ai-endpoint" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://api.openai.com/v1/chat/completions" /></label>
             <label class="field-label" for="ai-model">模型名称<input id="ai-model" type="text" autocomplete="off" spellcheck="false" placeholder="填写你的模型名称" /></label>
             <label class="field-label" for="ai-api-key">API Key<input id="ai-api-key" type="password" autocomplete="off" spellcheck="false" placeholder="sk-…" /></label>
           </div>
           <div class="ai-setting-actions"><button class="secondary-button" id="toggle-api-key" type="button">显示密钥</button><button class="quiet-danger-button" id="clear-api-key" type="button">清除密钥</button><button class="primary-button" id="test-ai-connection" type="button">测试连接</button></div>
           <p class="connection-status" id="ai-connection-status" role="status">API Key 只保存在当前标签页，关闭后自动清除。</p>
-          <p class="setting-security-note">使用 AI 整理时，该条记录会发送到你填写的模型服务。公开接口需使用 HTTPS；本地开发可使用 localhost，并需允许跨域请求。</p>
+          <p class="setting-security-note" id="ai-provider-note">使用 AI 整理时，该条记录会发送到你选择的模型服务。公开接口需使用 HTTPS；本地开发可使用 localhost，并需允许跨域请求。</p>
         </section>
         <section class="setting-row"><div><strong>外观</strong><p>原型默认跟随系统；可切换深浅主题体验。</p></div><select id="theme-select"><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></section>
         <section class="setting-row"><div><strong>桌面隐私</strong><p>隐藏小组件里的记录正文。</p></div><label class="switch"><input id="privacy-toggle" type="checkbox" /><span></span></label></section>
@@ -143,6 +144,6 @@
     </dialog>
 
     <div class="toast" id="toast" role="status" aria-live="polite"><span id="toast-message"></span><button id="toast-action" type="button" hidden>撤销</button></div>
-    <script src="./app.js?v=3"></script>
+    <script src="./app.js?v=4"></script>
   </body>
 </html>
