@@ -43,7 +43,7 @@ const aiTask = z.object({
   reminder:z.boolean().optional(), completed:z.boolean().optional(), summary:taskFields.shape.summary.optional(),
   actionItems:taskFields.shape.action_items.optional(), clarification:z.string().optional(),
 })
-export const aiResponse = z.object({reply:z.string().min(1).max(4000),action:z.enum(['create','update','none']),task:aiTask.optional()})
+export const aiResponse = z.object({reply:z.string().min(1).max(4000),action:z.enum(['create','update','none']),task:aiTask.nullish()})
 export function applyAI(raw:unknown, current:TaskFields|null): {reply:string; fields:TaskFields|null; action:'create'|'update'|'none'} {
   const data=aiResponse.parse(raw)
   if(data.action==='none' || data.task?.clarification?.trim()) return {reply:data.task?.clarification || data.reply,fields:null,action:'none'}

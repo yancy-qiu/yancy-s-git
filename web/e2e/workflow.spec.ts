@@ -49,7 +49,7 @@ test('AI creates, clarifies without mutation, and preserves tasks on failure',as
  await page.route('https://model.example/**',async route=>{
   expect(route.request().headers().authorization).toBe('Bearer test-session-key')
   if(mode==='fail'){await route.fulfill({status:500,body:'failure'});return}
-  const result=mode==='create'?{reply:'已记录',action:'create',task:{title:'AI 安排评审',content:'讨论产品',category:'meeting'}}:{reply:'你指哪天？',action:'none'}
+  const result=mode==='create'?{reply:'已记录',action:'create',task:{title:'AI 安排评审',content:'讨论产品',category:'meeting'}}:mode==='malformed'?{reply:'已修改',action:'update',task:{title:null}}:mode==='empty-update'?{reply:'已修改',action:'update',task:null}:{reply:'你指哪天？',action:'none',task:null}
   await route.fulfill({json:{choices:[{message:{content:JSON.stringify(result)}}]}})
  })
  await page.getByLabel('给 AI 发送消息').fill('安排产品讨论')
@@ -60,6 +60,12 @@ test('AI creates, clarifies without mutation, and preserves tasks on failure',as
  await page.getByLabel('给 AI 发送消息').fill('改个时间');await page.getByRole('button',{name:'发送 ↗',exact:true}).click()
  await expect(page.getByText('你指哪天？',{exact:true})).toBeVisible()
  expect(await page.evaluate(()=>localStorage.getItem('qingji.vue.demo.v1'))).toBe(before)
+ for(const [nextMode,expected] of [['empty-update','模型没有返回任务数据'],['malformed','模型返回的数据格式不正确']]){
+  mode=nextMode;await page.getByLabel('给 AI 发送消息').fill('补充行动项');await page.getByRole('button',{name:'发送 ↗',exact:true}).click()
+  await expect(page.getByRole('alert')).toContainText(expected)
+  await expect(page.getByRole('alert')).not.toContainText('invalid_type')
+  expect(await page.evaluate(()=>localStorage.getItem('qingji.vue.demo.v1'))).toBe(before)
+ }
  mode='fail';await page.getByLabel('给 AI 发送消息').fill('改到明天');await page.getByRole('button',{name:'发送 ↗',exact:true}).click()
  await expect(page.getByRole('alert')).toContainText('HTTP 500')
  expect(await page.evaluate(()=>localStorage.getItem('qingji.vue.demo.v1'))).toBe(before)

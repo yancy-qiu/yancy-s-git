@@ -16,6 +16,18 @@ describe('task behavior',()=>{
  })
 })
 describe('AI failure protections',()=>{
+ it('accepts a null task for replies and clarification without modifying records',()=>{
+   const before=structuredClone(task)
+   for(const current of [null,task]) {
+     expect(applyAI({action:'none',reply:'请问安排在哪一天？',task:null},current)).toEqual({reply:'请问安排在哪一天？',fields:null,action:'none'})
+   }
+   expect(task).toEqual(before)
+ })
+ it('rejects null tasks for create and update rather than claiming success',()=>{
+   for(const action of ['create','update']) {
+     expect(()=>applyAI({action,reply:'已完成',task:null},task)).toThrow('模型没有返回任务数据。')
+   }
+ })
  it('preserves manually set date and reminder when model returns null',()=>{
    const result=applyAI({action:'update',reply:'已整理',task:{summary:'摘要',dueDate:null}},task)
    expect(result.fields?.due_date).toBe(task.due_date)
