@@ -1,0 +1,122 @@
+<script setup lang="ts">
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useTasks } from './store'
+import { supabase, configured } from './supabase'
+import { blankTask, categories, localDate, matches, views, endpointURL, taskFields, type Task, type TaskFields, type Filter } from './domain'
+import { collaborate, testConnection, type Message } from './ai'
+const store=useTasks()
+const filter=ref<Filter>('today'), search=ref(''), today=ref(localDate())
+const selectedId=ref(''), editor=ref<TaskFields|null>(null), editing=ref<Task|undefined>(), settingsOpen=ref(false), widgetOpen=ref(false)
+const modal=ref<HTMLElement|null>(null)
+let previousFocus:HTMLElement|null=null
+const email=ref(''), password=ref(''), signup=ref(false), authBusy=ref(false), authNotice=ref(''), notice=ref('')
+const input=ref(''), contextId=ref(''), messages=ref<Message[]>([]), aiBusy=ref(false), aiError=ref('')
+const key=ref(sessionStorage.getItem('qingji.vue.ai-key')||''), testing=ref(false), connectionNotice=ref('')
+function readSettings(){try{return JSON.parse(localStorage.getItem('qingji.vue.preferences')||'{}')}catch{return {}}}
+const saved=readSettings(), theme=ref(saved.theme||'system'), privacy=ref(!!saved.privacy)
+const endpoint=ref(saved.endpoint||'https://api.openai.com/v1/chat/completions'), model=ref(saved.model||'')
+const selected=computed(()=>store.tasks.find(t=>t.id===selectedId.value)), context=computed(()=>store.tasks.find(t=>t.id===contextId.value)||null)
+const view=computed(()=>views.find(v=>v.id===filter.value)!)
+const visible=computed(()=>store.tasks.filter(t=>matches(t,filter.value,today.value) && `${t.title} ${t.content}`.toLowerCase().includes(search.value.toLowerCase())))
+const active=computed(()=>store.tasks.filter(t=>!t.completed).slice(0,3))
+const done=computed(()=>store.tasks.filter(t=>t.completed).length)
+const dialogOpen=computed(()=>!!editor.value || settingsOpen.value || widgetOpen.value)
+const undo=ref<Task|null>(null)
+let undoTimer:ReturnType<typeof setTimeout>|undefined, refreshTimer:ReturnType<typeof setInterval>|undefined, controller:AbortController|undefined
+watch([theme,privacy,endpoint,model],()=>{try{localStorage.setItem('qingji.vue.preferences',JSON.stringify({theme:theme.value,privacy:privacy.value,endpoint:endpoint.value,model:model.value}))}catch{notice.value='浏览器未允许保存设置。'};applyTheme()})
+watch(key,v=>{try{v?sessionStorage.setItem('qingji.vue.ai-key',v):sessionStorage.removeItem('qingji.vue.ai-key')}catch{notice.value='密钥仅保留在内存中。'}})
+const media=window.matchMedia('(prefers-color-scheme: dark)')
+function applyTheme(){document.documentElement.dataset.theme=theme.value==='system'?(media.matches?'dark':'light'):theme.value}
+watch(contextId,()=>{messages.value=[];aiError.value=''})
+watch(dialogOpen,async (open)=>{
+  if(open){previousFocus=document.activeElement as HTMLElement;setTimeout(()=>modal.value?.querySelector<HTMLElement>('input,select,textarea,button')?.focus(),0)}
+  else previousFocus?.focus()
+})
+watch(()=>store.user?.id,()=>{controller?.abort();selectedId.value='';contextId.value='';messages.value=[];input.value='';editor.value=null;undo.value=null;key.value=''})
+async function authenticate(){
+  if(!supabase || authBusy.value)return
+  authBusy.value=true;authNotice.value=''
+  try{
+    const {data,error}=signup.value?await supabase.auth.signUp({email:email.value,password:password.value,options:{emailRedirectTo:location.origin}}):await supabase.auth.signInWithPassword({email:email.value,password:password.value})
+    if(error) throw Error(signup.value?'注册失败，请检查邮箱、密码或稍后重试。':'登录失败，请检查邮箱和密码。')
+    if(signup.value && !data.session) authNotice.value='注册已提交，请检查邮箱并点击确认链接，然后登录。'
+    password.value=''
+  }catch(e){authNotice.value=e instanceof Error?e.message:'登录失败'}finally{authBusy.value=false}
+}
+function openEditor(task?:Task){editing.value=task;editor.value=task?taskFields.parse(task):blankTask()}
+async function saveEditor(){if(!editor.value)return;try{const t=await store.save(editor.value,editing.value);selectedId.value=t.id;filter.value=t.completed?'completed':!t.due_date?'inbox':t.due_date>today.value?'planned':'today';editor.value=null;notice.value='记录已保存'}catch{}}
+async function toggle(task:Task){try{await store.save({...task,completed:!task.completed},task);notice.value=task.completed?'已恢复':'完成得很好，继续轻松前行。'}catch{}}
+async function postpone(task:Task){const date=new Date();date.setDate(date.getDate()+1);try{await store.save({...task,due_date:localDate(date)},task);notice.value='已延后到明天'}catch{}}
+async function remove(task:Task){try{undo.value=await store.save(task,task,new Date().toISOString());selectedId.value='';clearTimeout(undoTimer);undoTimer=setTimeout(()=>undo.value=null,6000);notice.value='记录已删除'}catch{}}
+async function restore(){if(!undo.value)return;try{await store.save(undo.value,undo.value);undo.value=null;notice.value='已撤销删除'}catch{}}
+function reference(task:Task){contextId.value=task.id;selectedId.value='';document.querySelector<HTMLTextAreaElement>('#chat-input')?.focus()}
+async function send(){
+  if(!input.value.trim()||aiBusy.value||store.busy)return
+  if(!key.value||!model.value){settingsOpen.value=true;aiError.value='请先配置模型和 API Key，输入内容已保留。';return}
+  const text=input.value.trim(), original=context.value, owner=store.user?.id, wasDemo=store.demo
+  messages.value.push({role:'user',content:text});input.value='';aiBusy.value=true;aiError.value='';controller=new AbortController()
+  try{
+    const result=await collaborate({endpoint:endpoint.value,model:model.value},key.value,messages.value,original,controller.signal)
+    if(store.user?.id!==owner||store.demo!==wasDemo)throw Error('登录状态已改变，本次结果已取消。')
+    if(result.fields){const t=await store.save(result.fields,result.action==='update'?original??undefined:undefined);selectedId.value=t.id;filter.value=t.completed?'completed':!t.due_date?'inbox':t.due_date>today.value?'planned':'today'}
+    messages.value.push({role:'assistant',content:result.reply})
+  }catch(e){input.value=text;messages.value.pop();aiError.value=e instanceof DOMException&&e.name==='TimeoutError'?'模型请求超时，原任务未改变。':e instanceof Error?e.message:'请求失败，原任务未改变。'}finally{aiBusy.value=false;controller=undefined}
+}
+async function checkConnection(){
+  testing.value=true;connectionNotice.value=''
+  try{await testConnection({endpoint:endpoint.value,model:model.value},key.value);connectionNotice.value='连接成功，模型已响应。'}catch(e){connectionNotice.value=e instanceof Error?e.message:'连接失败'}finally{testing.value=false}
+}
+function validateSettings(){try{endpointURL(endpoint.value);settingsOpen.value=false;notice.value='模型设置已保存'}catch(e){notice.value=(e as Error).message}}
+async function logout(){try{controller?.abort();await store.logout();key.value='';notice.value=''}catch(e){notice.value=(e as Error).message}}
+function closeDialog(){if(store.busy)return;editor.value=null;settingsOpen.value=false;widgetOpen.value=false}
+function shortcuts(e:KeyboardEvent){
+  if(e.key==='Escape')closeDialog()
+  if(dialogOpen.value && e.key==='Tab'){
+    const items=Array.from(modal.value?.querySelectorAll<HTMLElement>('button:not(:disabled),input,select,textarea,[tabindex="0"]')||[])
+    if(!items.length)return
+    if(e.shiftKey&&document.activeElement===items[0]){e.preventDefault();items.at(-1)?.focus()}
+    else if(!e.shiftKey&&document.activeElement===items.at(-1)){e.preventDefault();items[0]?.focus()}
+  }
+  if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='n'){e.preventDefault();document.querySelector<HTMLTextAreaElement>('#chat-input')?.focus()}
+}
+function onFocus(){today.value=localDate();if(document.visibilityState==='visible')void store.refresh()}
+onMounted(()=>{void store.init();applyTheme();media.addEventListener('change',applyTheme);window.addEventListener('keydown',shortcuts);document.addEventListener('visibilitychange',onFocus);window.addEventListener('online',onFocus);refreshTimer=setInterval(onFocus,30000)})
+onUnmounted(()=>{controller?.abort();clearInterval(refreshTimer);clearTimeout(undoTimer);media.removeEventListener('change',applyTheme);window.removeEventListener('keydown',shortcuts);document.removeEventListener('visibilitychange',onFocus);window.removeEventListener('online',onFocus)})
+</script>
+
+<template>
+  <div v-if="store.loading" class="loading" role="status">✳ 正在打开轻记…</div>
+  <main v-else-if="!store.user && !store.demo" class="welcome">
+    <section class="welcome-story"><a href="#" class="brand">✳ <em>轻记</em><span>QINGJI</span></a><div><p class="eyebrow">LESS FRICTION. MORE FOCUS.</p><h1>把事情记下，<br>把轻松留下。</h1><p>从一个想法到下一步行动。<br>让 AI 帮你理清安排，让每一天更轻。</p><div class="welcome-note"><span>✓</span> 自然语言记录 <span>✓</span> 多设备同步 <span>✓</span> 自带 AI</div></div><small>记录更快，工作更轻。</small></section>
+    <section class="login-panel"><div class="login-card"><p class="eyebrow">YOUR SPACE TO THINK</p><h2>{{ signup?'开始轻记':'欢迎回来' }}</h2><p>给想法一个去处，给今天一点秩序。</p>
+      <form v-if="configured" @submit.prevent="authenticate"><label>邮箱<input v-model="email" type="email" autocomplete="email" placeholder="you@example.com" required></label><label>密码<input v-model="password" type="password" :autocomplete="signup?'new-password':'current-password'" minlength="8" maxlength="72" required placeholder="至少 8 位"></label><button class="primary" :disabled="authBusy">{{ authBusy?'请稍候…':signup?'创建账号':'登录轻记' }}</button><button type="button" class="text-button" @click="signup=!signup;authNotice=''">{{ signup?'已有账号？返回登录':'第一次来？创建账号' }}</button></form>
+      <div v-else class="setup-notice"><strong>云端空间尚未连接</strong><p>配置 Supabase 后即可注册、登录并同步任务。现在可以先体验完整界面。</p></div>
+      <p v-if="authNotice || store.error" role="status" class="error">{{ authNotice || store.error }}</p><button class="demo-button" @click="store.enterDemo()">先体验演示版 <span>↗</span></button><small>演示数据仅保存在此浏览器，不会上传云端。</small>
+    </div></section>
+  </main>
+  <div v-else class="app-shell" :inert="dialogOpen || undefined">
+    <aside class="sidebar"><a class="brand" href="#" @click.prevent="filter='today'"><span class="brand-icon">✳</span><em>轻记</em><span>QINGJI</span></a><p class="sidebar-caption">你的日常，轻一点</p><nav aria-label="任务视图"><button v-for="v in views" :key="v.id" :class="{active:filter===v.id}" :aria-current="filter===v.id?'page':undefined" @click="filter=v.id"><span class="nav-icon">{{ v.icon }}</span>{{ v.name }}<span class="count">{{ store.tasks.filter(t=>matches(t,v.id,today)).length }}</span></button></nav><div class="sidebar-bottom"><button class="widget-launch" @click="widgetOpen=true">▦ <span>小组件预览</span><span>↗</span></button><div class="sync-note"><span class="status-dot" :class="{demo:store.demo}"></span>{{ store.demo?'演示模式 · 仅本机':store.error?'同步遇到问题':'云端空间' }}<button v-if="!store.demo" class="text-button" @click="store.refresh()" aria-label="刷新任务">↻</button></div><small v-if="store.synced && !store.demo">上次同步 {{ store.synced }}</small></div></aside>
+    <div class="workspace"><header class="topbar"><span class="breadcrumb">我的空间 <span>/</span> {{ view.name }}</span><div class="top-actions"><span class="account">{{ store.demo?'演示体验':store.user?.email }}</span><button class="icon-button mobile-widget" aria-label="小组件预览" @click="widgetOpen=true">▦</button><button class="icon-button" aria-label="设置" @click="settingsOpen=true">⚙</button><button class="text-button" @click="logout">{{ store.demo?'退出演示':'退出登录' }}</button></div></header>
+      <nav class="mobile-nav" aria-label="移动端任务视图"><button v-for="v in views" :key="v.id" :class="{active:filter===v.id}" @click="filter=v.id">{{ v.name }}</button></nav>
+      <div v-if="store.demo" class="demo-banner">你正在体验演示空间，记录仅保存在当前浏览器。<button class="text-button" @click="logout">{{ configured?'前往登录':'连接云端后即可同步' }} ↗</button></div>
+      <div class="page-content"><div class="heading-row"><div><p class="eyebrow">{{ new Date(`${today}T12:00:00`).toLocaleDateString('zh-CN',{month:'long',day:'numeric',weekday:'long'}) }}</p><h1>{{ filter==='today'?'今天，轻装上阵。':view.name }}</h1><p>{{ view.description }}</p></div><button class="primary" @click="openEditor()">＋ 新建记录</button></div>
+      <div class="content-layout" :class="{ 'has-detail': selected }"><div class="main-column">
+        <section class="copilot" aria-labelledby="ai-title"><div class="copilot-title"><span class="ai-orb">✦</span><div><h2 id="ai-title">和 AI 一起，把事情理清</h2><p>{{ context?'告诉 AI，你想怎样调整这条任务':'一个想法，一句话，就从这里开始。' }}</p></div><span class="ai-badge">AI 协作</span></div><label class="context-picker">引用任务<select v-model="contextId" :disabled="aiBusy"><option value="">新任务</option><option v-for="t in store.tasks" :key="t.id" :value="t.id">{{ t.title }}</option></select></label><div v-if="context" class="context-tag">↗ 正在协作：{{ context.title }}<button :disabled="aiBusy" @click="contextId=''" aria-label="取消引用任务">×</button></div>
+          <div v-if="messages.length" class="messages" aria-live="polite"><div v-for="(m,i) in messages" :key="i" :class="m.role"><span>{{ m.role==='user'?'你':'✦ 轻记' }}</span><p>{{ m.content }}</p></div></div>
+          <form @submit.prevent="send"><label class="sr-only" for="chat-input">给 AI 发送消息</label><textarea id="chat-input" v-model="input" :disabled="aiBusy" placeholder="例如：明天下午 3 点提醒我提交周报，设为重要…" maxlength="12000" @keydown.meta.enter.prevent="send" @keydown.ctrl.enter.prevent="send"></textarea><div class="composer-footer"><span>{{ aiBusy?'正在理解你的想法…':'⌘ / Ctrl + Enter 发送' }}</span><button class="primary" :disabled="aiBusy || store.busy || !input.trim()">{{ aiBusy?'处理中…':'发送' }} ↗</button></div></form><p v-if="aiError" class="error" role="alert">{{ aiError }}</p><div class="suggestions"><button :disabled="aiBusy" @click="input='明天下午 3 点提醒我提交周报'">✧ 安排一件事</button><button :disabled="aiBusy" @click="input='记录下周的产品讨论会'">✧ 记下一个想法</button></div>
+        </section>
+        <section class="records-section"><div class="records-header"><h2>{{ view.name }}的记录 <span>{{ visible.length }}</span></h2><label class="search"><span class="sr-only">搜索记录</span><input v-model="search" placeholder="搜索记录…" type="search"></label></div><p v-if="store.error" class="error" role="alert">{{ store.error }} <button class="text-button" @click="store.refresh()">重新同步</button></p>
+          <div v-if="!visible.length" class="empty-state"><span>✧</span><h3>给这一天，留一点空白</h3><p>还没有{{ search?'匹配的':'相关' }}记录。记下一件小事，就有了开始。</p><button class="text-button" @click="openEditor()">＋ 添加第一条记录</button></div>
+          <div class="record-grid"><article v-for="t in visible" :key="t.id" class="record-card" :class="{completed:t.completed,selected:selectedId===t.id}"><div class="record-top"><span class="category" :class="t.category">{{ categories[t.category] }}</span><button class="check" :class="{checked:t.completed}" :aria-label="(t.completed?'恢复：':'完成：')+t.title" :disabled="store.busy" @click="toggle(t)">{{ t.completed?'✓':'' }}</button></div><button class="record-body" :aria-label="'查看：'+t.title" @click="selectedId=t.id"><h3>{{ t.title }}</h3><p>{{ t.summary || t.content || '留点空间，给下一步。' }}</p></button><div class="record-footer"><span :class="{overdue:!!t.due_date && t.due_date<today && !t.completed}">{{ t.due_date || '未安排日期' }} {{ t.due_time }}{{ t.priority==='high'?' · 重要':'' }}</span><button :disabled="aiBusy" :aria-label="'引用：'+t.title" @click="reference(t)">✦</button></div></article></div>
+        </section><footer class="page-footer"><span>一步一步，也是在向前。</span><span>{{ done }} 条已完成 · {{ store.tasks.length }} 条记录</span></footer>
+      </div><aside v-if="selected" class="detail-panel" aria-label="记录详情"><div class="detail-top"><span>记录详情</span><button class="icon-button" @click="selectedId=''" aria-label="关闭详情">×</button></div><span class="category">{{ categories[selected.category] }}</span><h2>{{ selected.title }}</h2><p class="detail-content">{{ selected.content }}</p><dl><dt>安排</dt><dd>{{ selected.due_date || '尚未安排' }} {{ selected.due_time }}</dd><dt>优先级</dt><dd>{{ {high:'重要',normal:'普通',low:'较低'}[selected.priority] }}</dd><dt>提醒设置</dt><dd>{{ selected.reminder?'已标记提醒':'未设置' }}（暂不触发通知）</dd></dl><section v-if="selected.summary"><h3>✦ 整理摘要</h3><p>{{ selected.summary }}</p></section><ol v-if="selected.action_items.length"><li v-for="(item,i) in selected.action_items" :key="i">{{ item }}</li></ol><div class="detail-actions"><button :disabled="aiBusy" class="primary" @click="reference(selected)">✦ 与 AI 协作</button><button @click="openEditor(selected)">编辑记录</button><button :disabled="store.busy" @click="toggle(selected)">{{ selected.completed?'恢复记录':'标记完成' }}</button><button :disabled="store.busy" @click="postpone(selected)">延后到明天</button><button class="danger" :disabled="store.busy" @click="remove(selected)">删除记录</button></div></aside></div>
+      </div>
+    </div>
+  </div>
+  <div v-if="dialogOpen" class="modal-backdrop" @click.self="closeDialog"><section ref="modal" class="modal" role="dialog" aria-modal="true" :aria-label="editor?'编辑记录':settingsOpen?'设置':'小组件预览'"><button class="modal-close icon-button" @click="closeDialog" aria-label="关闭弹窗">×</button>
+    <form v-if="editor" @submit.prevent="saveEditor"><p class="eyebrow">MAKE ROOM FOR YOUR IDEAS</p><h2>{{ editing?'编辑记录':'记下一件事' }}</h2><label>标题<input v-model="editor.title" maxlength="200" required placeholder="你想做什么？"></label><label>正文<textarea v-model="editor.content" maxlength="12000" rows="3" placeholder="补充一点细节…"></textarea></label><div class="form-grid"><label>类型<select v-model="editor.category"><option v-for="(name,id) in categories" :key="id" :value="id">{{ name }}</option></select></label><label>优先级<select v-model="editor.priority"><option value="normal">普通</option><option value="high">重要</option><option value="low">较低</option></select></label><label>日期<input v-model="editor.due_date" type="date" min="1900-01-01" max="9999-12-31"></label><label>时间<input v-model="editor.due_time" type="time" :disabled="!editor.due_date"></label></div><label class="checkbox"><input v-model="editor.reminder" :disabled="!editor.due_date" type="checkbox">标记提醒（当前版本不触发通知）</label><p v-if="store.error" class="error" role="alert">{{ store.error }}</p><button class="primary full" :disabled="store.busy">{{ store.busy?'保存中…':'保存记录' }}</button></form>
+    <form v-else-if="settingsOpen" @submit.prevent="validateSettings"><p class="eyebrow">MAKE IT YOURS</p><h2>你的轻记，你来定义</h2><label>外观<select v-model="theme" aria-label="外观"><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></label><label class="checkbox"><input v-model="privacy" type="checkbox">小组件预览隐藏任务标题</label><hr><h3>OpenAI 兼容模型</h3><p class="muted">使用你自己的模型服务。发送时，对话和引用任务会交给该接口；密钥仅保留在当前标签页会话，不同步到云端。</p><label>HTTPS 接口地址<input v-model="endpoint" type="url" required></label><label>模型名称<input v-model="model" placeholder="填写供应商提供的模型 ID"></label><label>API Key<input v-model="key" type="password" autocomplete="off" placeholder="你的 API Key"></label><div class="connection-actions"><button type="button" :disabled="testing" @click="checkConnection">{{ testing?'测试中…':'测试连接' }}</button><button type="button" class="text-button" @click="key=''">清除会话密钥</button></div><p v-if="connectionNotice" class="muted" role="status">{{ connectionNotice }}</p><p class="muted">服务需要允许浏览器跨域请求；不兼容的接口会提示错误。</p><button class="primary full">保存设置</button></form>
+    <div v-else><p class="eyebrow">A LITTLE SPACE FOR FOCUS</p><h2>小组件预览</h2><p class="muted">站内交互预览，不是系统桌面组件。</p><div class="widget"><div class="widget-heading"><em>轻记</em><span>{{ today }}</span></div><h3>今天，做一点就好。</h3><div v-for="t in active" :key="t.id" class="widget-record"><button class="check" :disabled="store.busy" :aria-label="'小组件完成：'+t.title" @click="toggle(t)"></button><button @click="selectedId=t.id;widgetOpen=false">{{ privacy?'私密记录':t.title }}</button></div><p v-if="!active.length">都完成了，好好享受这份轻松。</p></div></div>
+  </section></div>
+  <div v-if="notice || undo" class="toast" role="status"><span>{{ undo?'记录已删除':notice }}</span><button v-if="undo" :disabled="store.busy" @click="restore">撤销</button><button v-else @click="notice=''" aria-label="关闭提示">×</button></div>
+</template>
