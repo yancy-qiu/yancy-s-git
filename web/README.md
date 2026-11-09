@@ -2,6 +2,8 @@
 
 Vue 3 + TypeScript + Vite + Pinia；Supabase Auth / PostgreSQL / Realtime；用户自带 OpenAI 兼容 API Key。
 
+完整测试流程、已修复问题和真实服务验收边界见 [网站测试记录](../docs/development/web-test-plan.md)。
+
 ## 开发
 
 Node.js 22 或以上。在仓库 `web/` 目录运行：

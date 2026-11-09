@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type { User, RealtimeChannel } from '@supabase/supabase-js'
@@ -7,6 +8,8 @@ export const useTasks=defineStore('tasks',()=>{
   const user=ref<User|null>(null), tasks=ref<Task[]>([]), demo=ref(false), loading=ref(true), busy=ref(false), error=ref(''), synced=ref('')
   let channel:RealtimeChannel|null=null, generation=0, request=0
   const demoKey='qingji.vue.demo.v1'
+  let demoReadOnly=false
+  const cachedTasks=z.array(taskFields.extend({id:z.string(),user_id:z.string(),created_at:z.string(),updated_at:z.string(),deleted_at:z.string().nullable()}))
   async function refresh(){
     if(demo.value || busy.value || !user.value || !supabase) return
     const version=generation, id=++request
@@ -34,13 +37,24 @@ export const useTasks=defineStore('tasks',()=>{
   }
   function enterDemo(){
     generation++; demo.value=true; user.value=null; loading.value=false; error.value=''
-    const cached=localStorage.getItem(demoKey)
-    try {tasks.value=JSON.parse(cached||'[]')} catch {tasks.value=[]}
+    let cached:string|null=null
+    demoReadOnly=false
+    try {
+      cached=localStorage.getItem(demoKey)
+      tasks.value=cachedTasks.parse(JSON.parse(cached||'[]'))
+    } catch {
+      tasks.value=[];demoReadOnly=true
+      error.value='本地演示数据无法读取，已停止写入以保护原数据。请先备份浏览器站点数据，再清理演示数据后重试。'
+      return
+    }
     if(cached===null) tasks.value=[{...blankTask(),id:crypto.randomUUID(),user_id:'demo',title:'给今天留一点清晰',content:'试试编辑这条任务，或者记录你的第一个想法。',due_date:localDate(),created_at:new Date().toISOString(),updated_at:new Date().toISOString(),deleted_at:null}]
   }
   async function save(fields:TaskFields, existing?:Task, deletedAt:string|null=null){
     if(busy.value) throw Error('正在保存，请稍候。')
-    const parsed=taskFields.parse(fields)
+    if(demo.value && demoReadOnly) throw Error(error.value)
+    const validation=taskFields.safeParse(fields)
+    if(!validation.success){error.value=validation.error.issues[0]?.message || '请检查任务内容。';throw Error(error.value)}
+    const parsed=validation.data
     if(!parsed.due_date){parsed.reminder=false;parsed.due_time=''}
     busy.value=true; request++; error.value=''
     const version=generation

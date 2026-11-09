@@ -17,8 +17,9 @@ const modal=ref<HTMLElement|null>(null)
 let previousFocus:HTMLElement|null=null
 const email=ref(''), password=ref(''), signup=ref(false), authBusy=ref(false), authNotice=ref(''), notice=ref('')
 const input=ref(''), contextId=ref(''), messages=ref<Message[]>([]), aiBusy=ref(false), aiError=ref('')
-const key=ref(sessionStorage.getItem('qingji.vue.ai-key')||''), testing=ref(false), connectionNotice=ref('')
-function readSettings(){try{return JSON.parse(localStorage.getItem('qingji.vue.preferences')||'{}')}catch{return {}}}
+function readSessionKey(){try{return sessionStorage.getItem('qingji.vue.ai-key')||''}catch{return ''}}
+const key=ref(readSessionKey()), testing=ref(false), connectionNotice=ref('')
+function readSettings(){try{const value=JSON.parse(localStorage.getItem('qingji.vue.preferences')||'{}');return value && typeof value==='object' && !Array.isArray(value)?value:{}}catch{return {}}}
 const saved=readSettings(), theme=ref(saved.theme||'system'), privacy=ref(!!saved.privacy)
 const endpoint=ref(saved.endpoint||'https://api.openai.com/v1/chat/completions'), model=ref(saved.model||'')
 const selected=computed(()=>store.tasks.find(t=>t.id===selectedId.value)), context=computed(()=>store.tasks.find(t=>t.id===contextId.value)||null)
@@ -28,6 +29,7 @@ const active=computed(()=>store.tasks.filter(t=>!t.completed).slice(0,3))
 const done=computed(()=>store.tasks.filter(t=>t.completed).length)
 const dialogOpen=computed(()=>!!editor.value || settingsOpen.value || widgetOpen.value)
 const undo=ref<Task|null>(null)
+let sessionVersion=0
 let undoTimer:ReturnType<typeof setTimeout>|undefined, refreshTimer:ReturnType<typeof setInterval>|undefined, controller:AbortController|undefined
 watch([theme,privacy,endpoint,model],()=>{try{localStorage.setItem('qingji.vue.preferences',JSON.stringify({theme:theme.value,privacy:privacy.value,endpoint:endpoint.value,model:model.value}))}catch{notice.value='浏览器未允许保存设置。'};applyTheme()})
 watch(key,v=>{try{v?sessionStorage.setItem('qingji.vue.ai-key',v):sessionStorage.removeItem('qingji.vue.ai-key')}catch{notice.value='密钥仅保留在内存中。'}})
@@ -38,7 +40,12 @@ watch(dialogOpen,async (open)=>{
   if(open){previousFocus=document.activeElement as HTMLElement;setTimeout(()=>modal.value?.querySelector<HTMLElement>('input,select,textarea,button')?.focus(),0)}
   else previousFocus?.focus()
 })
-watch(()=>store.user?.id,()=>{controller?.abort();selectedId.value='';contextId.value='';messages.value=[];input.value='';editor.value=null;undo.value=null;key.value=''})
+function clearSessionState(){
+  sessionVersion++;controller?.abort();controller=undefined;aiBusy.value=false
+  selectedId.value='';contextId.value='';messages.value=[];input.value='';editor.value=null;editing.value=undefined
+  settingsOpen.value=false;widgetOpen.value=false;undo.value=null;clearTimeout(undoTimer);key.value='';aiError.value='';notice.value='';resetFilters()
+}
+watch(()=>store.user?.id,clearSessionState)
 async function authenticate(){
   if(!supabase || authBusy.value)return
   authBusy.value=true;authNotice.value=''
@@ -59,21 +66,21 @@ function reference(task:Task){contextId.value=task.id;if(window.innerWidth<=1050
 async function send(){
   if(!input.value.trim()||aiBusy.value||store.busy)return
   if(!key.value||!model.value){settingsOpen.value=true;aiError.value='请先配置模型和 API Key，输入内容已保留。';return}
-  const text=input.value.trim(), original=context.value, owner=store.user?.id, wasDemo=store.demo
+  const text=input.value.trim(), original=context.value, owner=store.user?.id, wasDemo=store.demo, version=sessionVersion
   messages.value.push({role:'user',content:text});input.value='';aiBusy.value=true;aiError.value='';controller=new AbortController()
   try{
     const result=await collaborate({endpoint:endpoint.value,model:model.value},key.value,messages.value,original,controller.signal)
-    if(store.user?.id!==owner||store.demo!==wasDemo)throw Error('登录状态已改变，本次结果已取消。')
+    if(version!==sessionVersion||store.user?.id!==owner||store.demo!==wasDemo)throw Error('登录状态已改变，本次结果已取消。')
     if(result.fields){if(result.action==='create')resetFilters();const t=await store.save(result.fields,result.action==='update'?original??undefined:undefined);selectedId.value=t.id;filter.value=t.completed?'completed':!t.due_date?'inbox':t.due_date>today.value?'planned':'today'}
     messages.value.push({role:'assistant',content:result.reply})
-  }catch(e){input.value=text;messages.value.pop();aiError.value=e instanceof DOMException&&e.name==='TimeoutError'?'模型请求超时，原任务未改变。':e instanceof Error?e.message:'请求失败，原任务未改变。'}finally{aiBusy.value=false;controller=undefined}
+  }catch(e){if(version!==sessionVersion)return;input.value=text;messages.value.pop();aiError.value=e instanceof DOMException&&e.name==='TimeoutError'?'模型请求超时，原任务未改变。':e instanceof Error?e.message:'请求失败，原任务未改变。'}finally{if(version===sessionVersion){aiBusy.value=false;controller=undefined}}
 }
 async function checkConnection(){
   testing.value=true;connectionNotice.value=''
   try{await testConnection({endpoint:endpoint.value,model:model.value},key.value);connectionNotice.value='连接成功，模型已响应。'}catch(e){connectionNotice.value=e instanceof Error?e.message:'连接失败'}finally{testing.value=false}
 }
 function validateSettings(){try{endpointURL(endpoint.value);settingsOpen.value=false;notice.value='模型设置已保存'}catch(e){notice.value=(e as Error).message}}
-async function logout(){try{controller?.abort();await store.logout();key.value='';notice.value=''}catch(e){notice.value=(e as Error).message}}
+async function logout(){try{controller?.abort();await store.logout();clearSessionState()}catch(e){notice.value=(e as Error).message}}
 function closeDialog(){if(store.busy)return;editor.value=null;settingsOpen.value=false;widgetOpen.value=false}
 function shortcuts(e:KeyboardEvent){
   if(e.key==='Escape')closeDialog()
