@@ -43,3 +43,7 @@
 ## AI 空任务兼容修复（2026-11-10）
 
 模型在不执行任务操作时可能返回 `{"action":"none","reply":"追问内容","task":null}`。校验现在接受 task 为 null 或省略，展示回复且不写入任务。create/update 仍必须提供有效任务对象，空值会明确报错并保留原任务。模型提示词同步说明该约定；无效 JSON 或任务字段校验失败会显示可读提示，不再将 Zod 内部错误直接显示在页面。单元测试和浏览器模拟接口均覆盖 null 追问、空任务更新、无效字段及失败不写入。
+
+## Arco Design Vue 与主题
+
+使用官方 `@arco-design/web-vue`，在 main.ts 按需注册 Button、Input、Popover、Tooltip、Tag 并导入官方样式，图标从官方 icon 入口按需导入。主题以清亮蓝色为主、暖黄与珊瑚橙为辅助色；深色同时设置 Arco 的 body arco-theme 属性。筛选条件保持在现有 TaskFilters，图标按钮使用可访问名称、Tooltip、Popover 和选中标记，不改变过滤逻辑。

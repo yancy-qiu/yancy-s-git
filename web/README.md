@@ -1,6 +1,6 @@
 # 轻记 Vue 网站
 
-Vue 3 + TypeScript + Vite + Pinia；Supabase Auth / PostgreSQL / Realtime；用户自带 OpenAI 兼容 API Key。
+Vue 3 + TypeScript + Vite + Pinia + Arco Design Vue；Supabase Auth / PostgreSQL / Realtime；用户自带 OpenAI 兼容 API Key。
 
 完整测试流程、已修复问题和真实服务验收边界见 [网站测试记录](../docs/development/web-test-plan.md)。
 
@@ -57,3 +57,7 @@ VITE_SUPABASE_PUBLISHABLE_KEY=项目公开密钥
 - 提醒目前只保存设置，不触发系统通知。小组件仅是站内预览。
 - 单元测试包含真实 PostgreSQL 引擎（PGlite）中的 RLS、账号隔离、冲突和撤销检查；Realtime publication、真实邮件登录、真实云端两设备同步及供应商 API 仍需连接实际服务验证。
 - 保持旧原型数据和新站数据独立，不自动导入浏览器原型的历史数据。
+
+## 组件与视觉主题
+
+界面使用 Arco Design Vue 按需注册的按钮、搜索输入框、浮层、提示、标签及官方图标。明亮蓝色为主色，暖黄和珊瑚橙作为辅助色，支持深色模式。筛选区采用图标按钮：悬停查看说明，点击展开选择；黄色圆点表示已应用非默认条件。
