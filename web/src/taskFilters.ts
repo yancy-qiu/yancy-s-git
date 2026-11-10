@@ -1,5 +1,6 @@
 import { localDate, matches, type Category, type Filter, type Task } from './domain'
 export interface TaskFilters {
+  recordKind: 'all' | 'meeting_minutes'
   search: string
   category: 'all' | Category
   date: 'all' | 'overdue' | 'today' | 'next7' | 'undated' | 'custom'
@@ -10,7 +11,7 @@ export interface TaskFilters {
   sort: 'newest' | 'schedule' | 'priority'
 }
 export function defaultFilters(): TaskFilters {
-  return { search:'',category:'all',date:'all',from:'',to:'',importance:'all',priority:'all',sort:'priority' }
+  return { recordKind:'all',search:'',category:'all',date:'all',from:'',to:'',importance:'all',priority:'all',sort:'priority' }
 }
 export function filterTasks(tasks: Task[], view: Filter, options: TaskFilters, today=localDate()): Task[] {
   const end=new Date(`${today}T12:00:00`)
@@ -19,6 +20,7 @@ export function filterTasks(tasks: Task[], view: Filter, options: TaskFilters, t
   const query=options.search.trim().toLocaleLowerCase()
   const rank={high:0,normal:1,low:2}
   return tasks.filter(t=>{
+    if(options.recordKind==='meeting_minutes' && t.record_kind!=='meeting_minutes')return false
     if(!matches(t,view,today)) return false
     if(query && !`${t.title} ${t.content} ${t.summary}`.toLocaleLowerCase().includes(query)) return false
     if(options.category!=='all' && t.category!==options.category) return false

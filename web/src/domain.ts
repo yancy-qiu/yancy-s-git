@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { minutesSchema } from './minutesDocument'
 export const categories = { task: '任务', meeting: '会议', progress: '进展', need: '需求' }
 export type Category = string
 export const categoryId = z.string().regex(/^(task|meeting|progress|need|custom_[0-9a-f-]{36})$/, '任务类型无效')
@@ -16,7 +17,8 @@ export function localDate(date = new Date()): string {
 }
 const date = z.string().refine(v => !v || /^\d{4}-\d{2}-\d{2}$/.test(v) && localDate(new Date(`${v}T12:00:00`)) === v, '日期格式无效')
 export const taskFields = z.object({
-  title:z.string().trim().min(1,'请输入标题').max(200), content:z.string().max(12000),
+  title:z.string().trim().min(1,'请输入标题').max(200), content:z.string().max(100000),
+  record_kind:z.enum(['task','meeting_minutes']).default('task'), document:minutesSchema.nullable().default(null),
   category:categoryId, due_date:date,
   due_time:z.string().regex(/^$|^([01]\d|2[0-3]):[0-5]\d$/),
   priority:z.enum(['high','normal','low']), reminder:z.boolean(), completed:z.boolean(),
@@ -24,7 +26,7 @@ export const taskFields = z.object({
 })
 export type TaskFields = z.infer<typeof taskFields>
 export interface Task extends TaskFields { id:string; user_id:string; created_at:string; updated_at:string; deleted_at:string|null }
-export function blankTask(): TaskFields { return {title:'',content:'',category:'task',due_date:'',due_time:'',priority:'normal',reminder:false,completed:false,organized:false,summary:'',action_items:[]} }
+export function blankTask(): TaskFields { return {record_kind:'task',document:null,title:'',content:'',category:'task',due_date:'',due_time:'',priority:'normal',reminder:false,completed:false,organized:false,summary:'',action_items:[]} }
 export function matches(t:Task, filter:Filter, today=localDate()) {
   if(t.deleted_at) return false
   if(filter === 'all') return true
@@ -52,7 +54,7 @@ export function applyAI(raw:unknown, current:TaskFields|null): {reply:string; fi
   if(data.action==='update' && !current) throw Error('请先引用需要修改的任务。')
   const t=data.task, fields={...(data.action==='update' && current ? current : blankTask()),organized:true}
   for(const k of ['title','content','category','priority','reminder','completed','summary'] as const) {
-    if(t[k]!==undefined) Object.assign(fields,{[k]:t[k]})
+    if(t[k]!==undefined && !(k==='content' && fields.record_kind==='meeting_minutes')) Object.assign(fields,{[k]:t[k]})
   }
   if(t.dueDate!==undefined && t.dueDate!==null) fields.due_date=t.dueDate
   if(t.dueTime!==undefined && t.dueTime!==null) fields.due_time=t.dueTime

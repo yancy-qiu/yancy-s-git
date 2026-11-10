@@ -13,6 +13,7 @@ beforeAll(async()=>{
  const sql=readFileSync(new URL('../../supabase/migrations/202611090001_tasks.sql',import.meta.url),'utf8').replace('alter publication supabase_realtime add table public.tasks;','')
  await db.exec(sql)
  await db.exec(readFileSync(new URL('../../supabase/migrations/202611100002_task_categories.sql',import.meta.url),'utf8'))
+ await db.exec(readFileSync(new URL('../../supabase/migrations/202611100003_meeting_minutes.sql',import.meta.url),'utf8'))
 },30000)
 afterAll(()=>db.close())
 describe.sequential('PostgreSQL row-level security',()=>{
@@ -57,6 +58,14 @@ describe.sequential('PostgreSQL row-level security',()=>{
    const c='33333333-3333-4333-8333-333333333333'
    await db.exec(`insert into auth.users values ('${c}')`)
    expect((await asUser(c,'select * from task_categories')).rows).toHaveLength(4)
+ })
+
+ it('preserves ordinary tasks and isolates structured meeting minutes',async()=>{
+   await asUser(a,`insert into tasks(title,record_kind,category,document,content) values ('会议纪要','meeting_minutes','meeting','{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"会议结论"}]}]}','会议结论')`)
+   expect((await asUser(b,`select * from tasks where record_kind='meeting_minutes'`)).rows).toHaveLength(0)
+   await expect(asUser(a,`insert into tasks(title,record_kind) values ('坏文档','meeting_minutes')`)).rejects.toThrow()
+   await expect(asUser(a,`insert into tasks(title,record_kind,document) values ('坏文档','meeting_minutes','{}')`)).rejects.toThrow()
+   expect((await asUser(a,`select * from tasks where record_kind='task'`)).rows.length).toBeGreaterThan(0)
  })
 
 })

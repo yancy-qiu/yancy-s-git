@@ -205,3 +205,11 @@ test('cloud custom type is restored in a second browser page',async({context,pag
  await page.reload()
  await expect(page.locator('.type-navigation').getByRole('button',{name:'客户沟通',exact:true})).toBeVisible()
 })
+test('cloud minutes document is restored on a second page',async({context,page})=>{
+ await cloud(context);await login(page)
+ await page.getByRole('button',{name:'新建会议纪要',exact:true}).click();await page.getByLabel('会议标题',{exact:true}).fill('跨页面会议纪要')
+ await page.getByRole('textbox',{name:'会议纪要正文',exact:true}).fill('保存结构化讨论结论')
+ await page.getByRole('button',{name:'保存纪要',exact:true}).click();await expect(page.getByRole('dialog')).toHaveCount(0)
+ const second=await context.newPage();await second.goto('/');await second.getByRole('navigation',{name:'任务视图',exact:true}).getByRole('button',{name:/全部记录/}).click()
+ await second.getByRole('button',{name:'查看：跨页面会议纪要',exact:true}).click();await expect(second.getByRole('textbox',{name:'会议纪要正文',exact:true})).toHaveText('保存结构化讨论结论')
+})
