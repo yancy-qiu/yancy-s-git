@@ -42,9 +42,10 @@ test('mobile renders without overflow and supports creation',async({page})=>{
 })
 test('AI creates, clarifies without mutation, and preserves tasks on failure',async({page})=>{
  await demo(page);await page.getByRole('button',{name:'设置',exact:true}).click()
+ await page.getByRole('button',{name:'模型配置 →',exact:true}).click()
  await page.getByLabel('HTTPS 接口地址').fill('https://model.example/v1/chat/completions')
  await page.getByLabel('模型名称').fill('test-model');await page.getByLabel('API Key',{exact:true}).fill('test-session-key')
- await page.getByRole('button',{name:'保存设置',exact:true}).click()
+ await page.getByRole('button',{name:'保存模型配置',exact:true}).click()
  let mode='create'
  await page.route('https://model.example/**',async route=>{
   expect(route.request().headers().authorization).toBe('Bearer test-session-key')
@@ -69,8 +70,8 @@ test('AI creates, clarifies without mutation, and preserves tasks on failure',as
  mode='fail';await page.getByLabel('给 AI 发送消息').fill('改到明天');await page.getByRole('button',{name:'发送 ↗',exact:true}).click()
  await expect(page.getByRole('alert')).toContainText('HTTP 500')
  expect(await page.evaluate(()=>localStorage.getItem('qingji.vue.demo.v1'))).toBe(before)
- expect(await page.evaluate(()=>JSON.stringify(localStorage))).not.toContain('test-session-key')
- expect(await page.evaluate(()=>sessionStorage.getItem('qingji.vue.ai-key'))).toBe('test-session-key')
+ expect(await page.evaluate(()=>localStorage.getItem('qingji.vue.model.v1.demo'))).toContain('test-session-key')
+ expect(await page.evaluate(()=>sessionStorage.getItem('qingji.vue.ai-key'))).toBeNull()
 })
 test('cloud login, remote task persistence, conflict handling and logout with mocked Supabase',async({page})=>{
  const owner='11111111-1111-4111-8111-111111111111';let tasks:any[]=[];let stale=false

@@ -17,8 +17,10 @@ const modal=ref<HTMLElement|null>(null)
 let previousFocus:HTMLElement|null=null
 const email=ref(''), password=ref(''), signup=ref(false), authBusy=ref(false), authNotice=ref(''), notice=ref('')
 const input=ref(''), contextId=ref(''), messages=ref<Message[]>([]), aiBusy=ref(false), aiError=ref('')
-function readSessionKey(){try{return sessionStorage.getItem('qingji.vue.ai-key')||''}catch{return ''}}
-const key=ref(readSessionKey()), testing=ref(false), connectionNotice=ref('')
+const key=ref(''), testing=ref(false), connectionNotice=ref('')
+const modelPage=ref(false), rememberModel=ref(true)
+const modelDraft=reactive({endpoint:'',model:'',key:''})
+const modelStorageKey=computed(()=>`qingji.vue.model.v1.${store.user?.id || (store.demo?'demo':'signed-out')}`)
 function readSettings(){try{const value=JSON.parse(localStorage.getItem('qingji.vue.preferences')||'{}');return value && typeof value==='object' && !Array.isArray(value)?value:{}}catch{return {}}}
 const saved=readSettings(), theme=ref(saved.theme||'system'), privacy=ref(!!saved.privacy)
 const endpoint=ref(saved.endpoint||'https://api.openai.com/v1/chat/completions'), model=ref(saved.model||'')
@@ -27,12 +29,42 @@ const view=computed(()=>views.find(v=>v.id===filter.value)!)
 const visible=computed(()=>filterTasks(store.tasks,filter.value,criteria,today.value))
 const active=computed(()=>store.tasks.filter(t=>!t.completed).slice(0,3))
 const done=computed(()=>store.tasks.filter(t=>t.completed).length)
-const dialogOpen=computed(()=>!!editor.value || settingsOpen.value || widgetOpen.value)
+const dialogOpen=computed(()=>!!editor.value || settingsOpen.value || modelPage.value || widgetOpen.value)
 const undo=ref<Task|null>(null)
 let sessionVersion=0
 let undoTimer:ReturnType<typeof setTimeout>|undefined, refreshTimer:ReturnType<typeof setInterval>|undefined, controller:AbortController|undefined
-watch([theme,privacy,endpoint,model],()=>{try{localStorage.setItem('qingji.vue.preferences',JSON.stringify({theme:theme.value,privacy:privacy.value,endpoint:endpoint.value,model:model.value}))}catch{notice.value='浏览器未允许保存设置。'};applyTheme()})
-watch(key,v=>{try{v?sessionStorage.setItem('qingji.vue.ai-key',v):sessionStorage.removeItem('qingji.vue.ai-key')}catch{notice.value='密钥仅保留在内存中。'}})
+watch([theme,privacy],()=>{try{localStorage.setItem('qingji.vue.preferences',JSON.stringify({theme:theme.value,privacy:privacy.value}))}catch{notice.value='浏览器未允许保存设置。'};applyTheme()})
+function loadModel(){
+  rememberModel.value=true;key.value='';model.value='';endpoint.value='https://api.openai.com/v1/chat/completions'
+  if(!store.user && !store.demo)return
+  try{
+    const saved=JSON.parse(localStorage.getItem(modelStorageKey.value)||'null')
+    if(saved && typeof saved.endpoint==='string' && typeof saved.model==='string' && typeof saved.key==='string'){
+      endpointURL(saved.endpoint);endpoint.value=saved.endpoint;model.value=saved.model;key.value=saved.key
+    }
+  }catch{notice.value='本机模型配置无法读取，请重新配置。'}
+}
+function openModel(){
+  Object.assign(modelDraft,{endpoint:endpoint.value,model:model.value,key:key.value})
+  connectionNotice.value='';settingsOpen.value=false;modelPage.value=true
+  requestAnimationFrame(()=>modal.value?.querySelector<HTMLElement>('button')?.focus())
+}
+function saveModel(){
+  try{
+    const next={endpoint:endpointURL(modelDraft.endpoint.trim()),model:modelDraft.model.trim(),key:modelDraft.key.trim()}
+    if(!next.model || !next.key)throw Error('请填写模型名称和 API Key。')
+    if(rememberModel.value)localStorage.setItem(modelStorageKey.value,JSON.stringify(next))
+    else localStorage.removeItem(modelStorageKey.value)
+    endpoint.value=next.endpoint;model.value=next.model;key.value=next.key
+    sessionStorage.removeItem('qingji.vue.ai-key')
+    modelDraft.key='';modelPage.value=false;notice.value=rememberModel.value?'模型配置已记住，下次打开可继续使用':'模型配置已保存，仅本次打开使用'
+  }catch(e){connectionNotice.value=e instanceof Error?e.message:'配置保存失败，请检查浏览器存储权限。'}
+}
+function clearModelKey(){
+  try{localStorage.removeItem(modelStorageKey.value);sessionStorage.removeItem('qingji.vue.ai-key');key.value='';modelDraft.key='';connectionNotice.value='已清除本机保存的模型配置。'}
+  catch{connectionNotice.value='清除失败，请检查浏览器存储权限。'}
+}
+
 const media=window.matchMedia('(prefers-color-scheme: dark)')
 function applyTheme(){document.documentElement.dataset.theme=theme.value==='system'?(media.matches?'dark':'light'):theme.value}
 watch(contextId,()=>{messages.value=[];aiError.value=''})
@@ -43,9 +75,9 @@ watch(dialogOpen,async (open)=>{
 function clearSessionState(){
   sessionVersion++;controller?.abort();controller=undefined;aiBusy.value=false
   selectedId.value='';contextId.value='';messages.value=[];input.value='';editor.value=null;editing.value=undefined
-  settingsOpen.value=false;widgetOpen.value=false;undo.value=null;clearTimeout(undoTimer);key.value='';aiError.value='';notice.value='';resetFilters()
+  settingsOpen.value=false;modelPage.value=false;modelDraft.key='';widgetOpen.value=false;undo.value=null;clearTimeout(undoTimer);key.value='';aiError.value='';notice.value='';resetFilters()
 }
-watch(()=>store.user?.id,clearSessionState)
+watch(modelStorageKey,()=>{clearSessionState();loadModel()})
 async function authenticate(){
   if(!supabase || authBusy.value)return
   authBusy.value=true;authNotice.value=''
@@ -65,7 +97,7 @@ async function restore(){if(!undo.value)return;try{await store.save(undo.value,u
 function reference(task:Task){contextId.value=task.id;if(window.innerWidth<=1050)selectedId.value='';focusComposer()}
 async function send(){
   if(!input.value.trim()||aiBusy.value||store.busy)return
-  if(!key.value||!model.value){settingsOpen.value=true;aiError.value='请先配置模型和 API Key，输入内容已保留。';return}
+  if(!key.value||!model.value){openModel();aiError.value='请先配置模型和 API Key，输入内容已保留。';return}
   const text=input.value.trim(), original=context.value, owner=store.user?.id, wasDemo=store.demo, version=sessionVersion
   messages.value.push({role:'user',content:text});input.value='';aiBusy.value=true;aiError.value='';controller=new AbortController()
   try{
@@ -77,11 +109,11 @@ async function send(){
 }
 async function checkConnection(){
   testing.value=true;connectionNotice.value=''
-  try{await testConnection({endpoint:endpoint.value,model:model.value},key.value);connectionNotice.value='连接成功，模型已响应。'}catch(e){connectionNotice.value=e instanceof Error?e.message:'连接失败'}finally{testing.value=false}
+  try{await testConnection({endpoint:modelDraft.endpoint,model:modelDraft.model},modelDraft.key);connectionNotice.value='连接成功，模型已响应。'}catch(e){connectionNotice.value=e instanceof Error?e.message:'连接失败'}finally{testing.value=false}
 }
-function validateSettings(){try{endpointURL(endpoint.value);settingsOpen.value=false;notice.value='模型设置已保存'}catch(e){notice.value=(e as Error).message}}
+function validateSettings(){settingsOpen.value=false;notice.value='设置已保存'}
 async function logout(){try{controller?.abort();await store.logout();clearSessionState()}catch(e){notice.value=(e as Error).message}}
-function closeDialog(){if(store.busy)return;editor.value=null;settingsOpen.value=false;widgetOpen.value=false}
+function closeDialog(){if(store.busy)return;editor.value=null;settingsOpen.value=false;modelPage.value=false;modelDraft.key='';widgetOpen.value=false}
 function shortcuts(e:KeyboardEvent){
   if(e.key==='Escape')closeDialog()
   if(dialogOpen.value && e.key==='Tab'){
@@ -138,9 +170,22 @@ onUnmounted(()=>{controller?.abort();clearInterval(refreshTimer);clearTimeout(un
     </div>
     <div class="quick-create"><button class="ai-shortcut" @click="focusComposer">✦ AI 快速记录</button><button class="primary" @click="openEditor()">＋ 新建记录</button></div>
   </div>
-  <div v-if="dialogOpen" class="modal-backdrop" @click.self="closeDialog"><section ref="modal" class="modal" role="dialog" aria-modal="true" :aria-label="editor?'编辑记录':settingsOpen?'设置':'小组件预览'"><button class="modal-close icon-button" @click="closeDialog" aria-label="关闭弹窗">×</button>
+  <div v-if="dialogOpen" :class="{'model-config-backdrop':modelPage}" class="modal-backdrop" @click.self="closeDialog"><section ref="modal" class="modal" role="dialog" aria-modal="true" :aria-label="editor?'编辑记录':settingsOpen?'设置':modelPage?'模型配置':'小组件预览'"><button class="modal-close icon-button" @click="closeDialog" aria-label="关闭弹窗">×</button>
     <form v-if="editor" @submit.prevent="saveEditor"><p class="eyebrow">MAKE ROOM FOR YOUR IDEAS</p><h2>{{ editing?'编辑记录':'记下一件事' }}</h2><label>标题<input v-model="editor.title" maxlength="200" required placeholder="你想做什么？"></label><label>正文<textarea v-model="editor.content" maxlength="12000" rows="3" placeholder="补充一点细节…"></textarea></label><div class="form-grid"><label>类型<select v-model="editor.category"><option v-for="(name,id) in categories" :key="id" :value="id">{{ name }}</option></select></label><label>优先级<select v-model="editor.priority"><option value="normal">普通</option><option value="high">重要</option><option value="low">较低</option></select></label><label>日期<input v-model="editor.due_date" type="date" min="1900-01-01" max="9999-12-31"></label><label>时间<input v-model="editor.due_time" type="time" :disabled="!editor.due_date"></label></div><label class="checkbox"><input v-model="editor.reminder" :disabled="!editor.due_date" type="checkbox">标记提醒（当前版本不触发通知）</label><p v-if="store.error" class="error" role="alert">{{ store.error }}</p><button class="primary full" :disabled="store.busy">{{ store.busy?'保存中…':'保存记录' }}</button></form>
-    <form v-else-if="settingsOpen" @submit.prevent="validateSettings"><p class="eyebrow">MAKE IT YOURS</p><h2>你的轻记，你来定义</h2><label>外观<select v-model="theme" aria-label="外观"><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></label><label class="checkbox"><input v-model="privacy" type="checkbox">小组件预览隐藏任务标题</label><hr><h3>OpenAI 兼容模型</h3><p class="muted">使用你自己的模型服务。发送时，对话和引用任务会交给该接口；密钥仅保留在当前标签页会话，不同步到云端。</p><label>HTTPS 接口地址<input v-model="endpoint" type="url" required></label><label>模型名称<input v-model="model" placeholder="填写供应商提供的模型 ID"></label><label>API Key<input v-model="key" type="password" autocomplete="off" placeholder="你的 API Key"></label><div class="connection-actions"><button type="button" :disabled="testing" @click="checkConnection">{{ testing?'测试中…':'测试连接' }}</button><button type="button" class="text-button" @click="key=''">清除会话密钥</button></div><p v-if="connectionNotice" class="muted" role="status">{{ connectionNotice }}</p><p class="muted">服务需要允许浏览器跨域请求；不兼容的接口会提示错误。</p><button class="primary full">保存设置</button></form>
+    <form v-else-if="settingsOpen" @submit.prevent="validateSettings"><p class="eyebrow">MAKE IT YOURS</p><h2>你的轻记，你来定义</h2><label>外观<select v-model="theme" aria-label="外观"><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></label><label class="checkbox"><input v-model="privacy" type="checkbox">小组件预览隐藏任务标题</label><hr><h3>模型配置</h3><p class="muted">在独立界面管理模型服务与密钥。</p><button type="button" class="full" @click="openModel">模型配置 →</button><button class="primary full">保存设置</button></form>
+    <form v-else-if="modelPage" @submit.prevent="saveModel" autocomplete="off">
+      <button type="button" class="text-button" @click="closeDialog();settingsOpen=true">← 返回设置</button>
+      <p class="eyebrow">YOUR MODEL, YOUR CONTROL</p><h2>模型配置</h2>
+      <p class="muted">使用 OpenAI 兼容服务。发送消息时，对话和引用任务会发送到此接口。</p>
+      <label>HTTPS 接口地址<input v-model="modelDraft.endpoint" type="url" required></label>
+      <label>模型名称<input v-model="modelDraft.model" required placeholder="填写供应商提供的模型 ID"></label>
+      <label>API Key<input v-model="modelDraft.key" type="password" autocomplete="new-password" required placeholder="你的 API Key"></label>
+      <label class="checkbox"><input v-model="rememberModel" type="checkbox">在此浏览器记住配置</label>
+      <p class="muted">仅在本机按账号保存，不同步到云端。共享设备请取消勾选；可随时清除。浏览器站点数据可能被同源脚本或设备使用者读取。</p>
+      <div class="connection-actions"><button type="button" :disabled="testing" @click="checkConnection">{{ testing?'测试中…':'测试连接' }}</button><button type="button" class="text-button" @click="clearModelKey">清除保存的配置</button></div>
+      <p v-if="connectionNotice" class="muted" role="status">{{ connectionNotice }}</p>
+      <p class="muted">服务需要允许浏览器跨域请求。</p><button class="primary full">保存模型配置</button>
+    </form>
     <div v-else><p class="eyebrow">A LITTLE SPACE FOR FOCUS</p><h2>小组件预览</h2><p class="muted">站内交互预览，不是系统桌面组件。</p><div class="widget"><div class="widget-heading"><em>轻记</em><span>{{ today }}</span></div><h3>今天，做一点就好。</h3><div v-for="t in active" :key="t.id" class="widget-record"><button class="check" :disabled="store.busy" :aria-label="'小组件完成：'+t.title" @click.stop="toggle(t)"></button><button @click="selectedId=t.id;widgetOpen=false">{{ privacy?'私密记录':t.title }}</button></div><p v-if="!active.length">都完成了，好好享受这份轻松。</p></div></div>
   </section></div>
   <div v-if="notice || undo" class="toast" role="status"><span>{{ undo?'记录已删除':notice }}</span><button v-if="undo" :disabled="store.busy" @click="restore">撤销</button><button v-else @click="notice=''" aria-label="关闭提示">×</button></div>

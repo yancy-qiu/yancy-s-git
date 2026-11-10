@@ -77,3 +77,5 @@
  .page-footer{flex-wrap:wrap}
  .toast{bottom:85px}
 }
+
+.model-config-backdrop{background:var(--bg);backdrop-filter:none}.model-config-backdrop .modal{width:640px;max-height:100%;box-shadow:none}.model-config-backdrop .eyebrow{margin-top:26px}
