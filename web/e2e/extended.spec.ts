@@ -7,6 +7,7 @@ async function modelSettings(page:Page){
  await page.getByLabel('模型名称').fill('test-model')
  await page.getByLabel('API Key',{exact:true}).fill('session-test-key')
  await page.getByRole('button',{name:'保存模型配置',exact:true}).click()
+ await expect(page.locator('.composer-model')).toHaveText('test-model')
 }
 test('whitespace title explains validation and preserves the editable form',async({page})=>{
  await demo(page)
@@ -43,7 +44,7 @@ test('AI connection test, successful referenced update, clear key and logout cle
  await page.getByRole('button',{name:'引用：给今天留一点清晰',exact:true}).click()
  const count=await page.locator('.record-card').count()
  await page.getByLabel('给 AI 发送消息').fill('设为重要并整理下一步')
- await page.getByRole('button',{name:'发送 ↗',exact:true}).click()
+ await page.getByRole('button',{name:'发送',exact:true}).click()
  await expect(page.getByText('已调整优先级',{exact:true})).toBeVisible()
  await expect(page.getByRole('heading',{name:'AI 更新后的任务',exact:true}).first()).toBeVisible()
  expect(await page.locator('.record-card').count()).toBe(count)
@@ -68,7 +69,7 @@ test('logging out during an AI request cannot restore prior conversation into th
  const pending=new Promise<void>(resolve=>started=resolve)
  await page.route('https://model.example/**',async route=>{started();await gate;await route.fulfill({status:500,body:'failure'}).catch(()=>{})})
  await page.getByLabel('给 AI 发送消息').fill('上一会话的私密内容')
- await page.getByRole('button',{name:'发送 ↗',exact:true}).click()
+ await page.getByRole('button',{name:'发送',exact:true}).click()
  await pending
  await page.getByRole('button',{name:'退出演示',exact:true}).click()
  release()
