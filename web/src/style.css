@@ -155,3 +155,10 @@ body{background:var(--bg);color:var(--text)}
 .detail-placeholder>.detail-top{margin:0 0 22px;text-align:left;padding:0;flex-shrink:0}
 @media(max-width:720px){.filter-toolbar .search{width:145px;margin-left:auto}.filter-toolbar .filter-sort-label{display:none}.filter-toolbar{gap:6px}.filter-icon.arco-btn{width:30px;height:30px;min-height:30px}.filter-toolbar .search .arco-input{font-size:11px}}
 @media(max-width:380px){.filter-toolbar .search{width:100%;margin-left:0}}
+
+/* One popover, directly selectable options: no nested select. */
+.filter-options{display:grid;gap:5px;width:220px;max-width:calc(100vw - 56px)}
+.arco-btn.filter-option{display:flex;align-items:center;justify-content:flex-start;gap:10px;width:100%;min-height:38px;padding:9px 12px;border:0;background:transparent;color:var(--text);font-size:12px;text-align:left;white-space:nowrap}
+.arco-btn.filter-option>svg:first-child{color:var(--muted);flex-shrink:0}
+.arco-btn.filter-option:hover,.arco-btn.filter-option.option-selected{background:var(--hover);color:var(--accent)}
+.arco-btn.filter-option.option-selected>svg{color:var(--accent)}.filter-option .option-check{margin-left:auto}

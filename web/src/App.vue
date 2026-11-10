@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { IconCalendar, IconStar, IconSort, IconSortDescending, IconApps, IconSearch, IconSun, IconSettings, IconThunderbolt, IconCheck } from '@arco-design/web-vue/es/icon'
+import { IconCalendar, IconStar, IconSort, IconSortDescending, IconApps, IconSearch, IconSun, IconSettings, IconThunderbolt, IconCheck, IconClockCircle, IconStarFill, IconArrowUp, IconArrowDown, IconMinus, IconFile, IconUserGroup, IconBulb, IconEdit } from '@arco-design/web-vue/es/icon'
 import { useTasks } from './store'
 import { supabase, configured } from './supabase'
 import { blankTask, categories, localDate, matches, views, endpointURL, taskFields, type Task, type TaskFields, type Filter } from './domain'
@@ -18,7 +18,15 @@ const filterControls=[
  {field:'category',title:'类型',label:'类型筛选',icon:IconApps,initial:'all',options:[['all','全部类型'],...Object.entries(categories)]},
  {field:'sort',title:'排序',label:'任务排序',icon:IconSortDescending,initial:'priority',options:[['priority','优先级优先'],['newest','最新创建'],['schedule','安排时间']]},
 ] as const
-function changeFilter(field:string,event:Event){Object.assign(criteria,{[field]:(event.target as HTMLSelectElement).value});filterPopup.value=''}
+function changeFilter(field:string,value:string){Object.assign(criteria,{[field]:value});filterPopup.value=''}
+function filterOptionIcon(field:string,value:string){
+  if(value==='all')return IconApps
+  if(field==='date')return ({overdue:IconClockCircle,today:IconSun,next7:IconCalendar,undated:IconMinus,custom:IconEdit} as Record<string,typeof IconApps>)[value] || IconCalendar
+  if(field==='importance')return value==='important'?IconStarFill:IconStar
+  if(field==='priority')return ({high:IconArrowUp,normal:IconMinus,low:IconArrowDown} as Record<string,typeof IconApps>)[value] || IconSort
+  if(field==='category')return ({task:IconCheck,meeting:IconUserGroup,progress:IconArrowUp,need:IconBulb} as Record<string,typeof IconApps>)[value] || IconFile
+  return value==='priority'?IconSort:value==='newest'?IconClockCircle:IconCalendar
+}
 const invalidRange=computed(()=>criteria.date==='custom' && !!criteria.from && !!criteria.to && criteria.from>criteria.to)
 function resetFilters(){Object.assign(criteria,defaultFilters())}
 function focusComposer(){requestAnimationFrame(()=>{const el=document.querySelector<HTMLTextAreaElement>('#chat-input');el?.scrollIntoView({block:'center',behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});el?.focus({preventScroll:true})})}
@@ -165,7 +173,11 @@ onUnmounted(()=>{controller?.abort();clearInterval(refreshTimer);clearTimeout(un
               <a-tooltip :content="control.title+' · '+control.options.find(option=>option[0]===criteria[control.field])?.[1]">
                 <a-button class="filter-icon" :class="{'filter-active':criteria[control.field]!==control.initial}" :aria-label="'筛选'+control.title" :aria-expanded="filterPopup===control.field" :title="control.title" shape="round"><component :is="control.icon" :size="18"/><span v-if="criteria[control.field]!==control.initial" class="filter-dot"></span></a-button>
               </a-tooltip>
-              <template #content><label class="filter-popover-label">{{ control.title }}<select :value="criteria[control.field]" :aria-label="control.label" @change="changeFilter(control.field,$event)"><option v-for="option in control.options" :key="option[0]" :value="option[0]">{{ option[1] }}</option></select></label></template>
+              <template #content><div class="filter-options" role="group" :aria-label="control.label">
+                <a-button v-for="option in control.options" :key="option[0]" class="filter-option" :class="{'option-selected':criteria[control.field]===option[0]}" :aria-pressed="criteria[control.field]===option[0]" @click="changeFilter(control.field,option[0])">
+                  <component :is="filterOptionIcon(control.field,option[0])" :size="17" aria-hidden="true"/><span>{{ option[1] }}</span><IconCheck v-if="criteria[control.field]===option[0]" class="option-check" aria-hidden="true"/>
+                </a-button>
+              </div></template>
             </a-popover>
             <label class="search"><span class="sr-only">搜索记录</span><a-input v-model="criteria.search" placeholder="搜索记录…" allow-clear :input-attrs="{'aria-label':'搜索记录'}"><template #prefix><IconSearch /></template></a-input></label><span class="filter-sort-label">{{ criteria.sort==='priority'?'优先级优先':criteria.sort==='newest'?'最新创建':'安排时间' }}</span>
           </div>
