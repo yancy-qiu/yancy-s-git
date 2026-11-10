@@ -1,23 +1,28 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { IconCalendar, IconStar, IconSort, IconSortDescending, IconApps, IconSearch, IconSun, IconSettings, IconThunderbolt, IconCheck, IconClockCircle, IconStarFill, IconArrowUp, IconArrowDown, IconMinus, IconFile, IconUserGroup, IconBulb, IconEdit } from '@arco-design/web-vue/es/icon'
+import { IconCalendar, IconStar, IconSort, IconSortDescending, IconApps, IconSearch, IconSun, IconSettings, IconThunderbolt, IconCheck, IconClockCircle, IconStarFill, IconArrowUp, IconArrowDown, IconMinus, IconFile, IconUserGroup, IconBulb, IconEdit, IconPlus } from '@arco-design/web-vue/es/icon'
 import { useTasks } from './store'
 import { supabase, configured } from './supabase'
-import { blankTask, categories, localDate, matches, views, endpointURL, taskFields, type Task, type TaskFields, type Filter } from './domain'
+import { blankTask, localDate, matches, views, endpointURL, taskFields, type Task, type TaskFields, type Filter } from './domain'
 import { collaborate, testConnection, type Message } from './ai'
 import { defaultFilters, filterTasks } from './taskFilters'
 const store=useTasks()
+const categories=computed(()=>store.categoryNames)
+const typesOpen=ref(false),typeName=ref(''),typeEditing=ref(''),typeNotice=ref('')
+function openTypes(){typeName.value='';typeEditing.value='';typeNotice.value='';filterPopup.value='';typesOpen.value=true}
+async function saveType(){try{await store.changeCategory(typeName.value,typeEditing.value||undefined);typeName.value='';typeEditing.value='';typeNotice.value='类型已保存'}catch(e){typeNotice.value=(e as Error).message}}
+async function deleteType(id:string){try{if(undo.value?.category===id)throw Error('该类型有待撤销的删除记录，请稍后再试。');await store.changeCategory('',id,true);if(criteria.category===id)criteria.category='all';if(typeEditing.value===id){typeEditing.value='';typeName.value=''};typeNotice.value='类型已删除'}catch(e){typeNotice.value=(e as Error).message}}
 const filter=ref<Filter>('today'), today=ref(localDate())
 const criteria=reactive(defaultFilters())
 const filtersActive=computed(()=>Object.entries(defaultFilters()).some(([k,v])=>k!=='sort' && criteria[k as keyof typeof criteria]!==v))
 const filterPopup=ref('')
-const filterControls=[
+const filterControls=computed(()=>[
  {field:'date',title:'安排日期',label:'安排日期筛选',icon:IconCalendar,initial:'all',options:[['all','全部日期'],['overdue','已逾期'],['today','今天'],['next7','未来七天（含今天）'],['undated','未安排日期'],['custom','自定义日期']]},
  {field:'importance',title:'重要性',label:'重要性筛选',icon:IconStar,initial:'all',options:[['all','全部重要性'],['important','重要'],['regular','非重要']]},
  {field:'priority',title:'优先级',label:'优先级筛选',icon:IconSort,initial:'all',options:[['all','全部优先级'],['high','高（重要）'],['normal','普通'],['low','较低']]},
- {field:'category',title:'类型',label:'类型筛选',icon:IconApps,initial:'all',options:[['all','全部类型'],...Object.entries(categories)]},
+ {field:'category',title:'类型',label:'类型筛选',icon:IconApps,initial:'all',options:[['all','全部类型'],...Object.entries(categories.value)]},
  {field:'sort',title:'排序',label:'任务排序',icon:IconSortDescending,initial:'priority',options:[['priority','优先级优先'],['newest','最新创建'],['schedule','安排时间']]},
-] as const
+] as const)
 function changeFilter(field:string,value:string){Object.assign(criteria,{[field]:value});filterPopup.value=''}
 function filterOptionIcon(field:string,value:string){
   if(value==='all')return IconApps
@@ -48,7 +53,7 @@ const view=computed(()=>views.find(v=>v.id===filter.value)!)
 const visible=computed(()=>filterTasks(store.tasks,filter.value,criteria,today.value))
 const active=computed(()=>store.tasks.filter(t=>!t.completed).slice(0,3))
 const done=computed(()=>store.tasks.filter(t=>t.completed).length)
-const dialogOpen=computed(()=>!!editor.value || settingsOpen.value || modelPage.value || widgetOpen.value)
+const dialogOpen=computed(()=>!!editor.value || settingsOpen.value || modelPage.value || typesOpen.value || widgetOpen.value)
 const undo=ref<Task|null>(null)
 let sessionVersion=0
 let undoTimer:ReturnType<typeof setTimeout>|undefined, refreshTimer:ReturnType<typeof setInterval>|undefined, controller:AbortController|undefined
@@ -94,7 +99,7 @@ watch(dialogOpen,async (open)=>{
 function clearSessionState(){
   sessionVersion++;controller?.abort();controller=undefined;aiBusy.value=false
   selectedId.value='';detailVisible.value=true;contextId.value='';messages.value=[];input.value='';editor.value=null;editing.value=undefined
-  settingsOpen.value=false;modelPage.value=false;modelDraft.key='';widgetOpen.value=false;undo.value=null;clearTimeout(undoTimer);key.value='';aiError.value='';notice.value='';resetFilters()
+  settingsOpen.value=false;typesOpen.value=false;modelPage.value=false;modelDraft.key='';widgetOpen.value=false;undo.value=null;clearTimeout(undoTimer);key.value='';aiError.value='';notice.value='';resetFilters()
 }
 watch(modelStorageKey,()=>{clearSessionState();loadModel()})
 async function authenticate(){
@@ -122,10 +127,10 @@ async function send(){
   const text=input.value.trim(), original=context.value, owner=store.user?.id, wasDemo=store.demo, version=sessionVersion
   messages.value.push({role:'user',content:text});input.value='';aiBusy.value=true;aiError.value='';controller=new AbortController()
   try{
-    const result=await collaborate({endpoint:endpoint.value,model:model.value},key.value,messages.value,original,controller.signal)
+    const result=await collaborate({endpoint:endpoint.value,model:model.value},key.value,messages.value,original,controller.signal,categories.value)
     if(version!==sessionVersion||store.user?.id!==owner||store.demo!==wasDemo)throw Error('登录状态已改变，本次结果已取消。')
-    if(result.fields){if(result.action==='create')resetFilters();const t=await store.save(result.fields,result.action==='update'?original??undefined:undefined);selectedId.value=t.id;filter.value=t.completed?'completed':!t.due_date?'inbox':t.due_date>today.value?'planned':'today'}
-    messages.value.push({role:'assistant',content:result.reply})
+    if(result.fields){if(result.action==='create')resetFilters();const t=await store.save(result.fields,result.action==='update'?original??undefined:undefined);selectedId.value=t.id;filter.value=t.completed?'completed':!t.due_date?'inbox':t.due_date>today.value?'planned':'today';messages.value=[];contextId.value='';notice.value='记录已保存，本轮对话已清空'}
+    else messages.value.push({role:'assistant',content:result.reply})
   }catch(e){if(version!==sessionVersion)return;input.value=text;messages.value.pop();aiError.value=e instanceof DOMException&&e.name==='TimeoutError'?'模型请求超时，原任务未改变。':e instanceof Error?e.message:'请求失败，原任务未改变。'}finally{if(version===sessionVersion){aiBusy.value=false;controller=undefined}}
 }
 async function checkConnection(){
@@ -134,7 +139,7 @@ async function checkConnection(){
 }
 function validateSettings(){settingsOpen.value=false;notice.value='设置已保存'}
 async function logout(){try{controller?.abort();await store.logout();clearSessionState()}catch(e){notice.value=(e as Error).message}}
-function closeDialog(){if(store.busy)return;editor.value=null;settingsOpen.value=false;modelPage.value=false;modelDraft.key='';widgetOpen.value=false}
+function closeDialog(){if(store.busy)return;editor.value=null;settingsOpen.value=false;typesOpen.value=false;modelPage.value=false;modelDraft.key='';widgetOpen.value=false}
 function shortcuts(e:KeyboardEvent){
   if(e.key==='Escape')closeDialog()
   if(dialogOpen.value && e.key==='Tab'){
@@ -145,7 +150,7 @@ function shortcuts(e:KeyboardEvent){
   }
   if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='n'){e.preventDefault();focusComposer()}
 }
-function onFocus(){today.value=localDate();if(document.visibilityState==='visible')void store.refresh()}
+function onFocus(){today.value=localDate();if(document.visibilityState==='visible'){void store.refresh();void store.refreshCategories()}}
 onMounted(()=>{void store.init();applyTheme();media.addEventListener('change',applyTheme);window.addEventListener('keydown',shortcuts);document.addEventListener('visibilitychange',onFocus);window.addEventListener('online',onFocus);refreshTimer=setInterval(onFocus,30000)})
 onUnmounted(()=>{controller?.abort();clearInterval(refreshTimer);clearTimeout(undoTimer);media.removeEventListener('change',applyTheme);window.removeEventListener('keydown',shortcuts);document.removeEventListener('visibilitychange',onFocus);window.removeEventListener('online',onFocus)})
 </script>
@@ -161,7 +166,7 @@ onUnmounted(()=>{controller?.abort();clearInterval(refreshTimer);clearTimeout(un
     </div></section>
   </main>
   <div v-else class="app-shell" :class="{'detail-open': selected,'details-hidden':!detailVisible}" :inert="dialogOpen || undefined">
-    <aside class="sidebar"><a class="brand" href="#" @click.prevent="filter='today'"><span class="brand-icon"><IconSun /></span><em>轻记</em><span>QINGJI</span></a><p class="sidebar-caption">你的日常，轻一点</p><nav aria-label="任务视图"><a-button html-type="submit" v-for="v in views" :key="v.id" :class="{active:filter===v.id}" :aria-current="filter===v.id?'page':undefined" @click="filter=v.id"><span class="nav-icon">{{ v.icon }}</span>{{ v.name }}<span class="count">{{ store.tasks.filter(t=>matches(t,v.id,today)).length }}</span></a-button></nav><div class="type-navigation"><p class="sidebar-section-title">记录类型</p><a-button html-type="submit" :class="{active:criteria.category==='all'}" @click="criteria.category='all'">全部类型</a-button><a-button html-type="submit" v-for="(name,id) in categories" :key="id" :class="{active:criteria.category===id}" @click="criteria.category=id">{{ name }}</a-button></div><div class="sidebar-bottom"><a-button html-type="submit" class="widget-launch" @click="widgetOpen=true">▦ <span>小组件预览</span><span>↗</span></a-button><div class="sync-note"><span class="status-dot" :class="{demo:store.demo}"></span>{{ store.demo?'演示模式 · 仅本机':store.error?'同步遇到问题':'云端空间' }}<a-button html-type="submit" v-if="!store.demo" class="text-button" @click="store.refresh()" aria-label="刷新任务">↻</a-button></div><small v-if="store.synced && !store.demo">上次同步 {{ store.synced }}</small></div></aside>
+    <aside class="sidebar"><a class="brand" href="#" @click.prevent="filter='today'"><span class="brand-icon"><IconSun /></span><em>轻记</em><span>QINGJI</span></a><p class="sidebar-caption">你的日常，轻一点</p><nav aria-label="任务视图"><a-button html-type="submit" v-for="v in views" :key="v.id" :class="{active:filter===v.id}" :aria-current="filter===v.id?'page':undefined" @click="filter=v.id"><span class="nav-icon">{{ v.icon }}</span>{{ v.name }}<span class="count">{{ store.tasks.filter(t=>matches(t,v.id,today)).length }}</span></a-button></nav><div class="type-navigation"><div class="type-section-heading"><p class="sidebar-section-title">记录类型</p><a-button class="type-manage-icon" aria-label="管理任务类型" title="新增或编辑任务类型" @click="openTypes"><IconPlus :size="15"/></a-button></div><a-button html-type="submit" :class="{active:criteria.category==='all'}" @click="criteria.category='all'">全部类型</a-button><a-button html-type="submit" v-for="(name,id) in categories" :key="id" :class="{active:criteria.category===id}" @click="criteria.category=id">{{ name }}</a-button></div><div class="sidebar-bottom"><a-button html-type="submit" class="widget-launch" @click="widgetOpen=true">▦ <span>小组件预览</span><span>↗</span></a-button><div class="sync-note"><span class="status-dot" :class="{demo:store.demo}"></span>{{ store.demo?'演示模式 · 仅本机':store.error?'同步遇到问题':'云端空间' }}<a-button html-type="submit" v-if="!store.demo" class="text-button" @click="store.refresh()" aria-label="刷新任务">↻</a-button></div><small v-if="store.synced && !store.demo">上次同步 {{ store.synced }}</small></div></aside>
     <div class="workspace"><header class="topbar"><span class="breadcrumb">我的空间 <span>/</span> {{ view.name }}</span><div class="top-actions"><a-button html-type="submit" class="text-button new-record" @click="openEditor()">＋ 新建记录</a-button><span class="account">{{ store.demo?'演示体验':store.user?.email }}</span><a-button html-type="submit" class="icon-button mobile-widget" aria-label="小组件预览" @click="widgetOpen=true">▦</a-button><a-button html-type="submit" class="icon-button" aria-label="设置" @click="settingsOpen=true"><IconSettings /></a-button><a-button html-type="submit" class="text-button" @click="logout">{{ store.demo?'退出演示':'退出登录' }}</a-button></div></header>
       <nav class="mobile-nav" aria-label="移动端任务视图"><a-button html-type="submit" v-for="v in views" :key="v.id" :class="{active:filter===v.id}" @click="filter=v.id">{{ v.name }}</a-button></nav>
       <div v-if="store.demo" class="demo-banner">你正在体验演示空间，记录仅保存在当前浏览器。<a-button html-type="submit" class="text-button" @click="logout">{{ configured?'前往登录':'连接云端后即可同步' }} ↗</a-button></div>
@@ -177,7 +182,7 @@ onUnmounted(()=>{controller?.abort();clearInterval(refreshTimer);clearTimeout(un
                 <a-button v-for="option in control.options" :key="option[0]" class="filter-option" :class="{'option-selected':criteria[control.field]===option[0]}" :aria-pressed="criteria[control.field]===option[0]" @click="changeFilter(control.field,option[0])">
                   <component :is="filterOptionIcon(control.field,option[0])" :size="17" aria-hidden="true"/><span>{{ option[1] }}</span><IconCheck v-if="criteria[control.field]===option[0]" class="option-check" aria-hidden="true"/>
                 </a-button>
-              </div></template>
+              <a-button v-if="control.field==='category'" class="text-button manage-types-link" @click="openTypes"><IconEdit/>管理类型</a-button></div></template>
             </a-popover>
             <label class="search"><span class="sr-only">搜索记录</span><a-input v-model="criteria.search" placeholder="搜索记录…" allow-clear :input-attrs="{'aria-label':'搜索记录'}"><template #prefix><IconSearch /></template></a-input></label><span class="filter-sort-label">{{ criteria.sort==='priority'?'优先级优先':criteria.sort==='newest'?'最新创建':'安排时间' }}</span>
           </div>
@@ -190,14 +195,14 @@ onUnmounted(()=>{controller?.abort();clearInterval(refreshTimer);clearTimeout(un
             <tbody><tr v-for="t in visible" :key="t.id" class="record-card" :class="{completed:t.completed,selected:selectedId===t.id}" @click="selectedId=t.id">
               <td><a-button html-type="submit" class="check" :class="{checked:t.completed}" :aria-label="(t.completed?'恢复：':'完成：')+t.title" :disabled="store.busy" @click.stop="toggle(t)">{{ t.completed?'✓':'' }}</a-button></td>
               <td class="task-title-cell"><a-button html-type="submit" class="record-body" :title="t.title" :aria-label="'查看：'+t.title" :aria-pressed="selectedId===t.id" @click="selectedId=t.id"><h3>{{ t.title }}</h3></a-button></td>
-              <td><span class="category" :class="t.category">{{ categories[t.category] }}</span></td>
+              <td><span class="category" :class="t.category">{{ categories[t.category] || '未命名类型' }}</span></td>
               <td><span class="priority-label" :class="t.priority">{{ {high:'重要 · 高',normal:'普通',low:'较低'}[t.priority] }}</span></td>
               <td class="task-schedule" :class="{overdue:!!t.due_date && t.due_date<today && !t.completed}">{{ t.due_date || '未安排' }} {{ t.due_time }}</td>
               <td><a-button html-type="submit" class="row-reference" :disabled="aiBusy" :aria-label="'引用：'+t.title" @click.stop="reference(t)">✦</a-button></td>
             </tr></tbody></table></div>
         </section>
 <footer class="page-footer"><span>一步一步，也是在向前。</span><span>{{ done }} 条已完成 · {{ store.tasks.length }} 条记录</span></footer>
-      </div><aside v-if="selected" class="detail-panel" aria-label="记录详情"><div class="detail-top"><span>记录详情</span><a-button html-type="submit" class="icon-button" @click="closeDetails" aria-label="关闭详情">×</a-button></div><span class="category">{{ categories[selected.category] }}</span><h2>{{ selected.title }}</h2><p class="detail-content">{{ selected.content }}</p><dl><dt>安排</dt><dd>{{ selected.due_date || '尚未安排' }} {{ selected.due_time }}</dd><dt>优先级</dt><dd>{{ {high:'重要',normal:'普通',low:'较低'}[selected.priority] }}</dd><dt>提醒设置</dt><dd>{{ selected.reminder?'已标记提醒':'未设置' }}（暂不触发通知）</dd></dl><section v-if="selected.summary"><h3>✦ 整理摘要</h3><p>{{ selected.summary }}</p></section><ol v-if="selected.action_items.length"><li v-for="(item,i) in selected.action_items" :key="i">{{ item }}</li></ol><div class="detail-actions"><a-button html-type="submit" :disabled="aiBusy" type="primary" class="primary" @click="reference(selected)">✦ 与 AI 协作</a-button><a-button html-type="submit" @click="openEditor(selected)">编辑记录</a-button><a-button html-type="submit" :disabled="store.busy" @click="toggle(selected)">{{ selected.completed?'恢复记录':'标记完成' }}</a-button><a-button html-type="submit" :disabled="store.busy" @click="postpone(selected)">延后到明天</a-button><a-button html-type="submit" class="danger" :disabled="store.busy" @click="remove(selected)">删除记录</a-button></div></aside><aside v-else-if="detailVisible" class="detail-panel detail-placeholder" aria-label="记录详情"><div class="detail-top"><span>记录详情</span><a-button class="icon-button" @click="closeDetails" aria-label="关闭详情">×</a-button></div><div><span class="detail-placeholder-icon"><IconCheck /></span><h2>选择一条任务</h2><p>点击左侧任务列表，随时查看安排、内容和下一步行动。</p></div></aside></div>
+      </div><aside v-if="selected" class="detail-panel" aria-label="记录详情"><div class="detail-top"><span>记录详情</span><a-button html-type="submit" class="icon-button" @click="closeDetails" aria-label="关闭详情">×</a-button></div><span class="category">{{ categories[selected.category] || '未命名类型' }}</span><h2>{{ selected.title }}</h2><p class="detail-content">{{ selected.content }}</p><dl><dt>安排</dt><dd>{{ selected.due_date || '尚未安排' }} {{ selected.due_time }}</dd><dt>优先级</dt><dd>{{ {high:'重要',normal:'普通',low:'较低'}[selected.priority] }}</dd><dt>提醒设置</dt><dd>{{ selected.reminder?'已标记提醒':'未设置' }}（暂不触发通知）</dd></dl><section v-if="selected.summary"><h3>✦ 整理摘要</h3><p>{{ selected.summary }}</p></section><ol v-if="selected.action_items.length"><li v-for="(item,i) in selected.action_items" :key="i">{{ item }}</li></ol><div class="detail-actions"><a-button html-type="submit" :disabled="aiBusy" type="primary" class="primary" @click="reference(selected)">✦ 与 AI 协作</a-button><a-button html-type="submit" @click="openEditor(selected)">编辑记录</a-button><a-button html-type="submit" :disabled="store.busy" @click="toggle(selected)">{{ selected.completed?'恢复记录':'标记完成' }}</a-button><a-button html-type="submit" :disabled="store.busy" @click="postpone(selected)">延后到明天</a-button><a-button html-type="submit" class="danger" :disabled="store.busy" @click="remove(selected)">删除记录</a-button></div></aside><aside v-else-if="detailVisible" class="detail-panel detail-placeholder" aria-label="记录详情"><div class="detail-top"><span>记录详情</span><a-button class="icon-button" @click="closeDetails" aria-label="关闭详情">×</a-button></div><div><span class="detail-placeholder-icon"><IconCheck /></span><h2>选择一条任务</h2><p>点击左侧任务列表，随时查看安排、内容和下一步行动。</p></div></aside></div>
       </div>
     </div>
     <section class="copilot compact-composer" aria-label="AI 任务对话">
@@ -208,7 +213,7 @@ onUnmounted(()=>{controller?.abort();clearInterval(refreshTimer);clearTimeout(un
       </form><p v-if="aiError" class="error" role="alert">{{ aiError }}</p>
     </section>
   </div>
-  <div v-if="dialogOpen" :class="{'model-config-backdrop':modelPage}" class="modal-backdrop" @click.self="closeDialog"><section ref="modal" class="modal" role="dialog" aria-modal="true" :aria-label="editor?'编辑记录':settingsOpen?'设置':modelPage?'模型配置':'小组件预览'"><a-button html-type="submit" class="modal-close icon-button" @click="closeDialog" aria-label="关闭弹窗">×</a-button>
+  <div v-if="dialogOpen" :class="{'model-config-backdrop':modelPage}" class="modal-backdrop" @click.self="closeDialog"><section ref="modal" class="modal" role="dialog" aria-modal="true" :aria-label="editor?'编辑记录':settingsOpen?'设置':modelPage?'模型配置':typesOpen?'管理任务类型':'小组件预览'"><a-button html-type="submit" class="modal-close icon-button" @click="closeDialog" aria-label="关闭弹窗">×</a-button>
     <form v-if="editor" @submit.prevent="saveEditor"><p class="eyebrow">MAKE ROOM FOR YOUR IDEAS</p><h2>{{ editing?'编辑记录':'记下一件事' }}</h2><label>标题<input v-model="editor.title" maxlength="200" required placeholder="你想做什么？"></label><label>正文<textarea v-model="editor.content" maxlength="12000" rows="3" placeholder="补充一点细节…"></textarea></label><div class="form-grid"><label>类型<select v-model="editor.category"><option v-for="(name,id) in categories" :key="id" :value="id">{{ name }}</option></select></label><label>优先级<select v-model="editor.priority"><option value="normal">普通</option><option value="high">重要</option><option value="low">较低</option></select></label><label>日期<input v-model="editor.due_date" type="date" min="1900-01-01" max="9999-12-31"></label><label>时间<input v-model="editor.due_time" type="time" :disabled="!editor.due_date"></label></div><label class="checkbox"><input v-model="editor.reminder" :disabled="!editor.due_date" type="checkbox">标记提醒（当前版本不触发通知）</label><p v-if="store.error" class="error" role="alert">{{ store.error }}</p><a-button html-type="submit" type="primary" class="primary full" :disabled="store.busy">{{ store.busy?'保存中…':'保存记录' }}</a-button></form>
     <form v-else-if="settingsOpen" @submit.prevent="validateSettings"><p class="eyebrow">MAKE IT YOURS</p><h2>你的轻记，你来定义</h2><label>外观<select v-model="theme" aria-label="外观"><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></label><label class="checkbox"><input v-model="privacy" type="checkbox">小组件预览隐藏任务标题</label><hr><h3>模型配置</h3><p class="muted">在独立界面管理模型服务与密钥。</p><a-button html-type="button" class="full" @click="openModel">模型配置 →</a-button><a-button html-type="submit" type="primary" class="primary full">保存设置</a-button></form>
     <form v-else-if="modelPage" @submit.prevent="saveModel" autocomplete="off">
@@ -224,6 +229,13 @@ onUnmounted(()=>{controller?.abort();clearInterval(refreshTimer);clearTimeout(un
       <p v-if="connectionNotice" class="muted" role="status">{{ connectionNotice }}</p>
       <p class="muted">服务需要允许浏览器跨域请求。</p><a-button html-type="submit" type="primary" class="primary full">保存模型配置</a-button>
     </form>
+    <div v-else-if="typesOpen" class="type-manager"><p class="eyebrow">MAKE IT YOURS</p><h2>管理任务类型</h2><p class="muted">新增专属类型，或修改现有名称。基础类型保留；使用中的类型不能删除。</p>
+      <p v-if="store.categoryError" class="error" role="alert">{{ store.categoryError }}<a-button class="text-button" @click="store.refreshCategories">重试</a-button></p>
+      <form @submit.prevent="saveType"><label>类型名称<input v-model="typeName" maxlength="20" required placeholder="例如：学习、生活、客户跟进"></label><div class="type-form-actions"><a-button html-type="submit" type="primary" :disabled="!store.categoryReady || store.categoryBusy">{{ typeEditing?'保存名称':'添加类型' }}</a-button><a-button v-if="typeEditing" @click="typeEditing='';typeName=''">取消编辑</a-button></div></form>
+      <p v-if="typeNotice" role="status" class="muted">{{ typeNotice }}</p>
+      <div class="type-manager-list"><div v-for="(name,id) in categories" :key="id" class="type-manager-row"><span>{{ name }}</span><small v-if="['task','meeting','progress','need'].includes(id)">基础类型</small><a-button :aria-label="'编辑类型：'+name" :disabled="store.categoryBusy || !store.categoryReady" @click="typeEditing=id;typeName=name;typeNotice=''">编辑</a-button><a-button v-if="!['task','meeting','progress','need'].includes(id)" class="danger" :aria-label="'删除类型：'+name" :disabled="store.categoryBusy || !store.categoryReady" @click="deleteType(id)">删除</a-button></div></div>
+      <p class="muted">{{ store.demo?'演示模式：类型仅保存在当前浏览器。':'类型按账号保存在云端，可在其他设备恢复。' }}</p>
+    </div>
     <div v-else><p class="eyebrow">A LITTLE SPACE FOR FOCUS</p><h2>小组件预览</h2><p class="muted">站内交互预览，不是系统桌面组件。</p><div class="widget"><div class="widget-heading"><em>轻记</em><span>{{ today }}</span></div><h3>今天，做一点就好。</h3><div v-for="t in active" :key="t.id" class="widget-record"><a-button html-type="submit" class="check" :disabled="store.busy" :aria-label="'小组件完成：'+t.title" @click.stop="toggle(t)"></a-button><a-button html-type="submit" @click="selectedId=t.id;widgetOpen=false">{{ privacy?'私密记录':t.title }}</a-button></div><p v-if="!active.length">都完成了，好好享受这份轻松。</p></div></div>
   </section></div>
   <div v-if="notice || undo" class="toast" role="status"><span>{{ undo?'记录已删除':notice }}</span><a-button html-type="submit" v-if="undo" :disabled="store.busy" @click="restore">撤销</a-button><a-button html-type="submit" v-else @click="notice=''" aria-label="关闭提示">×</a-button></div>

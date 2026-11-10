@@ -12,6 +12,7 @@ beforeAll(async()=>{
  // Realtime publication is hosted Supabase configuration, not available in PGlite.
  const sql=readFileSync(new URL('../../supabase/migrations/202611090001_tasks.sql',import.meta.url),'utf8').replace('alter publication supabase_realtime add table public.tasks;','')
  await db.exec(sql)
+ await db.exec(readFileSync(new URL('../../supabase/migrations/202611100002_task_categories.sql',import.meta.url),'utf8'))
 },30000)
 afterAll(()=>db.close())
 describe.sequential('PostgreSQL row-level security',()=>{
@@ -39,4 +40,23 @@ describe.sequential('PostgreSQL row-level security',()=>{
    await db.exec('set role anon')
    try{await expect(db.query('select * from tasks')).rejects.toThrow()}finally{await db.exec('reset role')}
  })
+ it('isolates custom types, preserves renamed assignments, and blocks used type deletion',async()=>{
+   const type='custom_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+   await asUser(a,`insert into task_categories(id,name) values ('${type}','学习')`)
+   expect((await asUser(b,`select * from task_categories where id='${type}'`)).rows).toHaveLength(0)
+   await expect(asUser(b,`insert into tasks(title,category) values ('越权类型','${type}')`)).rejects.toThrow()
+   await asUser(a,`insert into tasks(title,category) values ('读书','${type}')`)
+   await asUser(a,`update task_categories set name='阅读' where id='${type}'`)
+   expect((await asUser(a,`select * from tasks where category='${type}'`)).rows).toHaveLength(1)
+   await expect(asUser(a,`delete from task_categories where id='${type}'`)).rejects.toThrow()
+   await expect(asUser(a,`update task_categories set id='task' where id='${type}'`)).rejects.toThrow()
+   await expect(asUser(a,`insert into task_categories(id,name) values ('custom_bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','阅读')`)).rejects.toThrow()
+   expect((await asUser(a,`delete from task_categories where id='task' returning id`)).rows).toHaveLength(0)
+ })
+ it('seeds basic types for newly created accounts',async()=>{
+   const c='33333333-3333-4333-8333-333333333333'
+   await db.exec(`insert into auth.users values ('${c}')`)
+   expect((await asUser(c,'select * from task_categories')).rows).toHaveLength(4)
+ })
+
 })

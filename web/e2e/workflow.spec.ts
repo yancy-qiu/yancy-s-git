@@ -56,11 +56,14 @@ test('AI creates, clarifies without mutation, and preserves tasks on failure',as
  await page.getByLabel('给 AI 发送消息').fill('安排产品讨论')
  await page.getByRole('button',{name:'发送',exact:true}).click()
  await expect(page.getByRole('heading',{name:'AI 安排评审',exact:true}).first()).toBeVisible()
+ await expect(page.locator('.messages')).toHaveCount(0)
+ await expect(page.getByLabel('给 AI 发送消息')).toBeEmpty()
  const before=await page.evaluate(()=>localStorage.getItem('qingji.vue.demo.v1'))
  await page.getByRole('button',{name:'引用：AI 安排评审'}).click();mode='clarify'
  await page.getByLabel('给 AI 发送消息').fill('改个时间');await page.getByRole('button',{name:'发送',exact:true}).click()
  await expect(page.getByText('你指哪天？',{exact:true})).toBeVisible()
  expect(await page.evaluate(()=>localStorage.getItem('qingji.vue.demo.v1'))).toBe(before)
+ await expect(page.locator('.messages')).toContainText('你指哪天？')
  for(const [nextMode,expected] of [['empty-update','模型没有返回任务数据'],['malformed','模型返回的数据格式不正确']]){
   mode=nextMode;await page.getByLabel('给 AI 发送消息').fill('补充行动项');await page.getByRole('button',{name:'发送',exact:true}).click()
   await expect(page.getByRole('alert')).toContainText(expected)

@@ -45,7 +45,9 @@ test('AI connection test, successful referenced update, clear key and logout cle
  const count=await page.locator('.record-card').count()
  await page.getByLabel('给 AI 发送消息').fill('设为重要并整理下一步')
  await page.getByRole('button',{name:'发送',exact:true}).click()
- await expect(page.getByText('已调整优先级',{exact:true})).toBeVisible()
+ await expect(page.locator('.messages')).toHaveCount(0)
+ await expect(page.locator('.context-tag')).toHaveCount(0)
+ await expect(page.getByLabel('给 AI 发送消息')).toBeEmpty()
  await expect(page.getByRole('heading',{name:'AI 更新后的任务',exact:true}).first()).toBeVisible()
  expect(await page.locator('.record-card').count()).toBe(count)
  expect(requests).toBe(2)
@@ -82,7 +84,7 @@ async function cloud(context:BrowserContext){
  const owner='11111111-1111-4111-8111-111111111111'
  const user={id:owner,aud:'authenticated',email:'test@example.com',app_metadata:{},user_metadata:{},created_at:new Date().toISOString()}
  const jwt=`${Buffer.from(JSON.stringify({alg:'HS256',typ:'JWT'})).toString('base64url')}.${Buffer.from(JSON.stringify({sub:owner,exp:Math.floor(Date.now()/1000)+3600,aud:'authenticated'})).toString('base64url')}.fake`
- const state={tasks:[] as any[],writeFailure:false,readFailure:false,readAttempts:0,rejectLogin:false}
+ const state={types:['task','meeting','progress','need'].map((id,i)=>({id,name:['任务','会议','进展','需求'][i]})),tasks:[] as any[],writeFailure:false,readFailure:false,readAttempts:0,rejectLogin:false}
  let version=0
  await context.routeWebSocket('**/realtime/**',ws=>ws.close())
  await context.route('https://qingji-test.supabase.co/**',async route=>{
@@ -91,6 +93,13 @@ async function cloud(context:BrowserContext){
   if(url.pathname.includes('/signup')){await route.fulfill({json:{user,session:null}});return}
   if(url.pathname.includes('/logout')){await route.fulfill({status:204});return}
   if(url.pathname.includes('/user')){await route.fulfill({json:user});return}
+  if(url.pathname.includes('/rest/v1/task_categories')){
+   if(req.method()==='GET'){await route.fulfill({json:state.types});return}
+   if(req.method()==='POST'){const t=req.postDataJSON();state.types.push(t);await route.fulfill({json:t});return}
+   const id=url.searchParams.get('id')?.slice(3), type=state.types.find(t=>t.id===id)
+   if(req.method()==='PATCH' && type){type.name=req.postDataJSON().name;await route.fulfill({json:type});return}
+   if(req.method()==='DELETE' && type){state.types=state.types.filter(t=>t.id!==id);await route.fulfill({json:type});return}
+  }
   if(url.pathname.includes('/rest/v1/tasks')){
    if(req.method()==='GET'){if(state.readFailure)state.readAttempts++;await route.fulfill(state.readFailure?{status:503,json:{message:'unavailable'}}:{json:state.tasks.filter(t=>!t.deleted_at)});return}
    if(state.writeFailure){await route.fulfill({status:503,json:{message:'unavailable'}});return}
@@ -177,4 +186,22 @@ test('remembered model configuration is isolated by account and restored after l
  await page.getByRole('button',{name:'设置',exact:true}).click()
  await page.getByRole('button',{name:'模型配置 →',exact:true}).click()
  await expect(page.getByLabel('API Key',{exact:true})).toHaveValue('session-test-key')
+})
+
+test('cloud custom type is restored in a second browser page',async({context,page})=>{
+ await cloud(context);await login(page)
+ await page.getByRole('button',{name:'管理任务类型',exact:true}).click()
+ await page.getByLabel('类型名称',{exact:true}).fill('客户跟进')
+ await page.getByRole('button',{name:'添加类型',exact:true}).click()
+ await expect(page.getByRole('button',{name:'编辑类型：客户跟进',exact:true})).toBeVisible()
+ await page.getByRole('button',{name:'关闭弹窗',exact:true}).click()
+ const second=await context.newPage();await second.goto('/')
+ await expect(second.locator('.type-navigation').getByRole('button',{name:'客户跟进',exact:true})).toBeVisible()
+ await second.getByRole('button',{name:'管理任务类型',exact:true}).click()
+ await second.getByRole('button',{name:'编辑类型：客户跟进',exact:true}).click()
+ await second.getByLabel('类型名称',{exact:true}).fill('客户沟通')
+ await second.getByRole('button',{name:'保存名称',exact:true}).click()
+ await expect(second.getByRole('button',{name:'编辑类型：客户沟通',exact:true})).toBeVisible()
+ await page.reload()
+ await expect(page.locator('.type-navigation').getByRole('button',{name:'客户沟通',exact:true})).toBeVisible()
 })

@@ -1,6 +1,7 @@
 import { z } from 'zod'
 export const categories = { task: '任务', meeting: '会议', progress: '进展', need: '需求' }
-export type Category = keyof typeof categories
+export type Category = string
+export const categoryId = z.string().regex(/^(task|meeting|progress|need|custom_[0-9a-f-]{36})$/, '任务类型无效')
 export type Filter = 'today' | 'inbox' | 'planned' | 'unorganized' | 'all' | 'completed'
 export const views: { id: Filter; name: string; icon: string; description: string }[] = [
   { id:'today', name:'今天', icon:'☀', description:'把注意力留给今天最重要的事。' },
@@ -16,7 +17,7 @@ export function localDate(date = new Date()): string {
 const date = z.string().refine(v => !v || /^\d{4}-\d{2}-\d{2}$/.test(v) && localDate(new Date(`${v}T12:00:00`)) === v, '日期格式无效')
 export const taskFields = z.object({
   title:z.string().trim().min(1,'请输入标题').max(200), content:z.string().max(12000),
-  category:z.enum(['task','meeting','progress','need']), due_date:date,
+  category:categoryId, due_date:date,
   due_time:z.string().regex(/^$|^([01]\d|2[0-3]):[0-5]\d$/),
   priority:z.enum(['high','normal','low']), reminder:z.boolean(), completed:z.boolean(),
   organized:z.boolean(), summary:z.string().max(2000), action_items:z.array(z.string().max(500)).max(3),
