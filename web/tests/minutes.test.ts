@@ -18,4 +18,9 @@ describe('meeting document validation and task compatibility',()=>{
   const result=applyAI({reply:'更新',action:'update',task:{priority:'high',content:'不得覆盖'}},current)
   expect(result.fields?.document).toEqual(emptyMinutes());expect(result.fields?.content).toBe('原文');expect(result.fields?.priority).toBe('high')
  })
+ it('accepts highlight marks and keeps highlighted content searchable',()=>{
+  const doc={type:'doc',content:[{type:'paragraph',content:[{type:'text',text:'重点',marks:[{type:'highlight'}]}]}]}
+  expect(minutesSchema.safeParse(doc).success).toBe(true);expect(minutesText(doc)).toBe('重点')
+ })
+
 })

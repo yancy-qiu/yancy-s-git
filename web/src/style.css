@@ -181,3 +181,5 @@ body{background:var(--bg);color:var(--text)}
 @media(max-width:720px){.composer-options{gap:7px}.composer-options label{gap:4px}.composer-options label select{max-width:95px}.composer-options input[type=date]{width:112px}.composer-options>span{display:none}.rich-expanded .tiptap{min-height:150px;max-height:30dvh}.compact-composer.composer-expanded{max-height:70dvh}}
 
 .rich-input .tiptap{position:relative}.rich-input:not(.rich-readonly) .tiptap:has(>p:only-child>br:only-child)::before{content:attr(data-placeholder);position:absolute;color:var(--muted);pointer-events:none}
+
+.rich-input mark{background:#fff09a;color:#453e20;border-radius:2px;padding:0 1px;box-decoration-break:clone}.rich-tools .highlight-tool-icon{color:#b88a11}.rich-tools .arco-btn[aria-label="荧光笔高亮"][aria-pressed=true]{background:#fff09a;color:#806010}[data-theme=dark] .rich-input mark{background:#8a6b1c;color:#fff4c2}
