@@ -97,6 +97,7 @@ export const useTasks=defineStore('tasks',()=>{
     const validation=taskFields.safeParse(fields)
     if(!validation.success){error.value=validation.error.issues[0]?.message || '请检查任务内容。';throw Error(error.value)}
     const parsed=validation.data
+    if(parsed.record_kind==='meeting_minutes' && !parsed.document)throw Error('会议纪要缺少文档内容。')
     if(!categoryNames.value[parsed.category])throw Error('任务类型不存在，请重新选择。')
     if(!parsed.due_date){parsed.reminder=false;parsed.due_time=''}
     busy.value=true; request++; error.value=''
@@ -107,12 +108,13 @@ export const useTasks=defineStore('tasks',()=>{
         saved={...parsed,id:existing?.id||crypto.randomUUID(),user_id:'demo',created_at:existing?.created_at||new Date().toISOString(),updated_at:new Date().toISOString(),deleted_at:deletedAt}
       }else{
         if(!user.value || !supabase) throw Error('请先登录。')
-        const payload={...parsed,deleted_at:deletedAt}
+        const {record_kind,document,...plain}=parsed
+        const payload=record_kind==='meeting_minutes'?{...parsed,deleted_at:deletedAt}:{...plain,deleted_at:deletedAt}
         const query=existing
           ? supabase.from('tasks').update(payload).eq('id',existing.id).eq('user_id',user.value.id).eq('updated_at',existing.updated_at)
           : supabase.from('tasks').insert({...payload,user_id:user.value.id})
         const {data,error:e}=await query.select().single()
-        if(e) throw Error(e.code==='PGRST116'?'任务已在其他设备修改，请刷新后重试。':'云端保存失败，当前修改未同步，请重试。')
+        if(e) throw Error(['PGRST204','42703','23514'].includes(e.code) && parsed.record_kind==='meeting_minutes'?'纪要保存服务尚未就绪，请稍后重试；草稿已保留。':e.code==='PGRST116'?'任务已在其他设备修改，请刷新后重试。':'云端保存失败，当前修改未同步，请重试。')
         saved=data as Task
       }
       if(version!==generation) throw Error('登录状态已改变，请重新操作。')
