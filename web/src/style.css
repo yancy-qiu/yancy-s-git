@@ -79,3 +79,27 @@
 }
 
 .model-config-backdrop{background:var(--bg);backdrop-filter:none}.model-config-backdrop .modal{width:640px;max-height:100%;box-shadow:none}.model-config-backdrop .eyebrow{margin-top:26px}
+
+/* Compact rows and an independent composer dock. */
+.app-shell{--sidebar-width:224px;--detail-width:310px;--page-padding:32px;--layout-gap:24px;--page-gutter:max(var(--page-padding),calc((100vw - var(--sidebar-width) - 1800px)/2 + var(--page-padding)))}
+.page-content{padding-bottom: min(440px,60dvh)}
+.record-grid{display:block;overflow-x:auto;border:1px solid var(--border);border-radius:10px;background:var(--panel)}
+.task-table{width:100%;min-width:540px;border-collapse:collapse;table-layout:fixed;text-align:left}
+.task-table th{height:34px;background:var(--soft);font-size:10px;font-weight:500;color:var(--muted);padding:0 10px;white-space:nowrap}
+.task-table th:first-child{width:42px}.task-table th:nth-child(3){width:65px}.task-table th:nth-child(4){width:88px}.task-table th:nth-child(5){width:145px}.task-table th:last-child{width:40px}
+.task-table .record-card{position:static;min-height:0;height:46px;padding:0;border:0;border-radius:0;background:transparent;box-shadow:none}
+.task-table td{padding:0 10px;border-top:1px solid var(--border);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.task-table .record-card:hover{background:var(--soft)}.task-table .record-card.selected{background:var(--hover)}
+.task-table .record-body{overflow:hidden;padding:10px 0}.task-table .record-body h3{font-size:12px;font-weight:500;line-height:24px;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.task-table .category{font-size:9px;padding:3px 5px}.task-table .priority-label{font-size:10px}.task-table .check{display:block}.task-table .task-schedule{color:var(--muted)}.task-table .overdue{color:var(--danger)}
+.row-reference{border:0;padding:5px;color:#83966d}
+.copilot{position:fixed;left:calc(var(--sidebar-width) + var(--page-gutter));right:calc(var(--page-gutter) + var(--detail-width) + var(--layout-gap));bottom:18px;z-index:6;margin:0;padding:16px 20px;max-height: min(420px,55dvh);overflow:auto;box-shadow:0 8px 36px #15251a24}
+.copilot-title{margin-bottom:10px}.copilot-title .ai-orb{width:32px;height:32px;font-size:20px}.copilot-title p{display:none}.copilot-title h2{font-size:13px;margin:0}
+.copilot textarea{min-height:44px;height:48px;max-height:120px;font-size:13px}.copilot .context-picker{margin-bottom:4px}.copilot .context-tag{margin:6px 0}.copilot .messages{max-height:110px;margin:8px 0}.copilot .composer-footer{border:0;padding:0}.copilot .suggestions{display:none}
+.new-record{white-space:nowrap}.toast{bottom:auto;top:75px}
+@media(min-width:1450px){.app-shell{--detail-width:350px}}
+@media(max-width:1200px){.app-shell{--sidebar-width:195px}}
+@media(max-width:1200px) and (min-width:1051px){.app-shell{--detail-width:280px;--page-padding:22px;--layout-gap:16px}}
+@media(max-width:1050px){.app-shell{--detail-width:0px;--layout-gap:0px}.detail-open .copilot{visibility:hidden}}
+@media(max-width:720px){.app-shell{--sidebar-width:0px;--page-padding:18px}.copilot{bottom:max(10px,env(safe-area-inset-bottom));padding:12px;max-height:50dvh}.copilot-title{display:none}.copilot .context-picker select{max-width:70%;width:180px}.page-content{padding-bottom: min(440px,60dvh)}.new-record{font-size:11px;padding:6px}.top-actions{gap:7px}}
+.record-grid{position:relative}

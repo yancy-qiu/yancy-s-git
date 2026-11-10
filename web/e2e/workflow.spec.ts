@@ -123,7 +123,11 @@ test('three column task workbench, combined filters and bottom composer',async({
  await expect(details.getByRole('heading',{name:'选择一条任务'})).toBeVisible()
  const listBox=(await list.boundingBox())!, detailBox=(await details.boundingBox())!, composerBox=(await page.locator('.copilot').boundingBox())!
  expect(detailBox.x).toBeGreaterThanOrEqual(listBox.x+listBox.width)
- expect(composerBox.y).toBeGreaterThan(listBox.y+listBox.height)
+ expect(await page.locator('.copilot').evaluate(el=>getComputedStyle(el).position)).toBe('fixed')
+ expect(composerBox.y+composerBox.height).toBeLessThanOrEqual(1000)
+ expect(await page.locator('.quick-create').count()).toBe(0)
+ await expect(page.getByLabel('任务排序',{exact:true})).toHaveValue('priority')
+ expect((await page.locator('.record-card').first().boundingBox())!.height).toBeLessThanOrEqual(56)
  await page.getByRole('button',{name:'查看：重要评审',exact:true}).click()
  await expect(details.getByRole('heading',{name:'重要评审',exact:true})).toBeVisible()
  await page.getByRole('button',{name:'查看：普通会议',exact:true}).click()
@@ -155,4 +159,27 @@ test('three column task workbench, combined filters and bottom composer',async({
  await expect(page.locator('.record-card')).toHaveCount(1)
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)
  await page.screenshot({path:'/tmp/qingji-workbench-mobile.png',fullPage:true})
+})
+
+test('compact rows keep the composer fixed while the last task remains reachable',async({page})=>{
+ await page.setViewportSize({width:1440,height:1000})
+ await page.addInitScript(()=>{
+  const base={user_id:'demo',content:'详细正文保留在右侧',category:'task',due_date:'',due_time:'',priority:'normal',reminder:false,completed:false,organized:false,summary:'',action_items:[],created_at:'2026-11-01T00:00:00Z',updated_at:'2026-11-01T00:00:00Z',deleted_at:null}
+  localStorage.setItem('qingji.vue.demo.v1',JSON.stringify(Array.from({length:40},(_,i)=>({...base,id:String(i).padStart(2,'0'),title:`任务 ${i}：需要查看的安排`,priority:i===39?'high':'normal'}))))
+ })
+ await demo(page)
+ await page.getByRole('navigation',{name:'任务视图',exact:true}).getByRole('button',{name:/全部记录/}).click()
+ await expect(page.locator('.record-card').first()).toContainText('任务 39')
+ const before=(await page.locator('.copilot').boundingBox())!
+ await page.locator('.record-card').last().scrollIntoViewIfNeeded()
+ const after=(await page.locator('.copilot').boundingBox())!
+ expect(after.y).toBeCloseTo(before.y,0)
+ await page.evaluate(()=>window.scrollTo(0,document.documentElement.scrollHeight))
+ expect((await page.locator('.record-card').last().boundingBox())!.y+46).toBeLessThan(after.y)
+ await page.getByRole('button',{name:'引用：任务 9：需要查看的安排',exact:true}).click()
+ await expect(page.getByLabel('给 AI 发送消息')).toBeFocused()
+ await page.screenshot({path:'/tmp/qingji-floating-desktop.png',fullPage:false})
+ await page.setViewportSize({width:390,height:844})
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)
+ await page.screenshot({path:'/tmp/qingji-floating-mobile.png',fullPage:false})
 })

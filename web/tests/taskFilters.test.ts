@@ -19,12 +19,12 @@ describe('combined task filtering and ordering',()=>{
    expect(run({date:'today',category:'meeting',priority:'normal'})).toEqual(['today'])
  })
  it('includes both boundaries of next seven calendar days',()=>{
-   expect(run({date:'next7'})).toEqual(['last','today'])
+   expect(run({date:'next7'})).toEqual(['today','last'])
    expect(run({date:'overdue'})).toEqual(['overdue'])
    expect(run({date:'undated'})).toEqual(['undated'])
  })
  it('supports inclusive and open date ranges and rejects inverted ranges',()=>{
-   expect(run({date:'custom',from:today,to:'2026-11-16'})).toEqual(['last','today'])
+   expect(run({date:'custom',from:today,to:'2026-11-16'})).toEqual(['today','last'])
    expect(run({date:'custom',from:'2026-11-17'})).toEqual(['outside'])
    expect(run({date:'custom',from:'2026-11-16',to:today})).toEqual([])
  })

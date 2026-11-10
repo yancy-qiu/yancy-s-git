@@ -10,7 +10,7 @@ export interface TaskFilters {
   sort: 'newest' | 'schedule' | 'priority'
 }
 export function defaultFilters(): TaskFilters {
-  return { search:'',category:'all',date:'all',from:'',to:'',importance:'all',priority:'all',sort:'newest' }
+  return { search:'',category:'all',date:'all',from:'',to:'',importance:'all',priority:'all',sort:'priority' }
 }
 export function filterTasks(tasks: Task[], view: Filter, options: TaskFilters, today=localDate()): Task[] {
   const end=new Date(`${today}T12:00:00`)

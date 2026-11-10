@@ -165,6 +165,7 @@ test('remembered model configuration is isolated by account and restored after l
  await page.getByLabel('API Key',{exact:true}).fill('account-fake-key')
  await page.getByRole('button',{name:'保存模型配置',exact:true}).click()
  await page.getByRole('button',{name:'退出登录',exact:true}).click()
+ await expect(page.getByRole('button',{name:'登录轻记',exact:true})).toBeVisible()
  await login(page)
  await page.getByRole('button',{name:'设置',exact:true}).click()
  await page.getByRole('button',{name:'模型配置 →',exact:true}).click()
