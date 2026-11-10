@@ -19,4 +19,3 @@ export function minutesText(doc:MinutesNode):string{
  const text=(n:MinutesNode):string=>n.type==='text'?n.text||'':n.type==='hardBreak'?'\n':(n.content||[]).map(text).join(['doc','bulletList','orderedList','taskList','listItem','taskItem','blockquote'].includes(n.type)?'\n':'')
  return text(doc)
 }
-export const minutesTemplate=():MinutesNode=>({type:'doc',content:['会议主题','时间与参会人','讨论要点','结论','行动项'].flatMap(t=>[{type:'heading',attrs:{level:2},content:[{type:'text',text:t}]},{type:'paragraph'}])})
