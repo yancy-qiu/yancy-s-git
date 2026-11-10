@@ -146,3 +146,12 @@ body{background:var(--bg);color:var(--text)}
 [data-theme=dark] .arco-btn.primary:disabled{background:#344d73;border-color:#344d73;color:#9bb6de}
 
 .arco-btn.row-reference{width:18px}.toast .arco-btn{background:transparent;color:inherit;min-height:0;height:auto;border:0;padding:3px}.mobile-nav .arco-btn{background:transparent}.mobile-nav .arco-btn.active{background:var(--soft);color:var(--accent)}
+
+/* Search shares the filter row; closing details returns space to the list. */
+.filter-toolbar .search{width:210px;margin-left:auto;min-width:0}
+.filter-toolbar .filter-sort-label{margin-left:0}
+.app-shell.details-hidden{--detail-width:0px;--layout-gap:0px}
+.details-hidden .content-layout{grid-template-columns:minmax(0,1fr)}
+.detail-placeholder>.detail-top{margin:0 0 22px;text-align:left;padding:0;flex-shrink:0}
+@media(max-width:720px){.filter-toolbar .search{width:145px;margin-left:auto}.filter-toolbar .filter-sort-label{display:none}.filter-toolbar{gap:6px}.filter-icon.arco-btn{width:30px;height:30px;min-height:30px}.filter-toolbar .search .arco-input{font-size:11px}}
+@media(max-width:380px){.filter-toolbar .search{width:100%;margin-left:0}}
