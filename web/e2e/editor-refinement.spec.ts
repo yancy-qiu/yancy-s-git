@@ -53,3 +53,29 @@ test('glass workspace uses inline Arco metadata and a collapsible formatting too
  if(await page.getByRole('button',{name:'关闭提示',exact:true}).isVisible())await page.getByRole('button',{name:'关闭提示',exact:true}).click()
  await page.screenshot({path:'/tmp/qingji-glass-dark.png',animations:'disabled'})
 })
+
+for(const width of [1440,390])test(`mention popup stays anchored while scrolling at ${width}px`,async({page})=>{
+ await page.setViewportSize({width,height:900});await page.emulateMedia({reducedMotion:'reduce'})
+ await page.addInitScript(()=>{
+  const base={user_id:'demo',content:'正文',category:'task',due_date:'',due_time:'',priority:'normal',reminder:false,completed:false,organized:false,summary:'',action_items:[],created_at:'2026-11-01T00:00:00Z',updated_at:'2026-11-01T00:00:00Z',deleted_at:null}
+  localStorage.setItem('qingji.vue.demo.v1',JSON.stringify(Array.from({length:40},(_,i)=>({...base,id:String(i),title:`滚动引用任务 ${i}`}))))
+ })
+ await page.goto('/');await page.getByRole('button',{name:'先体验演示版'}).click()
+ await page.getByRole('navigation',{name:width===390?'移动端任务视图':'任务视图',exact:true}).getByRole('button',{name:/全部记录/}).click()
+ const composer=page.getByRole('region',{name:'AI 任务对话'}),button=composer.getByRole('button',{name:'引用任务',exact:true}),popup=page.locator('.mention-picker')
+ async function gap(){const trigger=await button.boundingBox(),panel=await popup.boundingBox();return trigger!.y-(panel!.y+panel!.height)}
+ for(const expanded of [false,true]){
+  if(expanded)await composer.getByRole('button',{name:'展开长文本',exact:true}).click()
+  await button.click();await expect(popup).toBeVisible()
+  const before=await gap()
+  await page.evaluate(()=>window.scrollTo(0,500));await expect.poll(()=>page.evaluate(()=>window.scrollY)).toBeGreaterThan(100)
+  await expect.poll(async()=>Math.abs(await gap()-before)).toBeLessThan(2)
+  await popup.locator('.mention-results').evaluate(el=>el.scrollTop=150)
+  await expect.poll(async()=>Math.abs(await gap()-before)).toBeLessThan(2)
+  await page.evaluate(()=>window.scrollTo(0,0));await expect.poll(async()=>Math.abs(await gap()-before)).toBeLessThan(2)
+  await page.getByLabel('搜索引用任务',{exact:true}).fill('滚动引用任务 12')
+  await page.getByRole('option',{name:/滚动引用任务 12/}).click()
+  await expect(composer.locator('.context-tag')).toContainText('滚动引用任务 12')
+  await composer.getByRole('button',{name:'取消引用任务',exact:true}).click()
+ }
+})

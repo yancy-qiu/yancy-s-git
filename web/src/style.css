@@ -224,3 +224,6 @@ body{background:radial-gradient(ellipse at 10% 0%,#dcecff 0,transparent 48%),rad
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
 .detail-editor .record-metadata{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.detail-editor .record-metadata>.arco-picker{grid-column:1/-1;width:100%}.detail-editor .record-metadata>.arco-select-view{width:100%}
 @media(max-width:720px){.compact-composer .record-metadata{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.compact-composer .record-metadata>.arco-picker{grid-column:1/-1;width:100%}.compact-composer .record-metadata>.arco-select-view{width:100%}}
+
+/* Keep task references in viewport coordinates, like the fixed composer. */
+.mention-popup-layer{position:fixed;inset:0;z-index:20;pointer-events:none}.mention-popup-layer>.arco-trigger-popup{pointer-events:auto}
