@@ -5,7 +5,7 @@ async function expand(page:Page){await page.getByRole('button',{name:'展开长�
 test('all new records use composer; inline formatting, metadata and collapsed mode retain content',async({page})=>{
  await page.setViewportSize({width:1440,height:1000});await demo(page)
  await expect(page.getByRole('button',{name:'新建会议纪要',exact:true})).toHaveCount(0);await expect(page.getByRole('button',{name:'＋ 新建记录',exact:true})).toHaveCount(0)
- await expand(page);await page.getByRole('button',{name:'文本格式开关'}).click();await expect(page.getByRole('dialog')).toHaveCount(0)
+ await expand(page);await expect(page.getByRole('dialog')).toHaveCount(0)
  await expect(page.getByRole('textbox',{name:'标题',exact:true})).toHaveCount(0)
  await expect(page.getByLabel('记录类型',{exact:true})).toContainText('任务')
  const body=page.getByRole('textbox',{name:'长文本内容',exact:true});await body.fill('确认新版发布范围');await body.press('ControlOrMeta+a');await page.getByRole('button',{name:'加粗',exact:true}).click();await expect(body.locator('strong')).toHaveText('确认新版发布范围')
@@ -41,7 +41,7 @@ test('long-text keyboard send creates one record and clears the composer',async(
  await expect(page.getByRole('textbox',{name:'给 AI 发送消息',exact:true})).toBeEmpty();await expect(page.getByRole('dialog')).toHaveCount(0)
 })
 test('minimal format toolbar highlights text, persists it and removes highlighting',async({page})=>{
- await demo(page);await expand(page);await page.getByRole('button',{name:'文本格式开关'}).click()
+ await demo(page);await expand(page)
  const toolbar=page.getByRole('toolbar',{name:'文本格式',exact:true}), body=page.getByRole('textbox',{name:'长文本内容',exact:true})
  await expect(toolbar.getByRole('button')).toHaveCount(6)
  const buttons=await toolbar.getByRole('button').all();const size=(await buttons[0].boundingBox())!
@@ -52,6 +52,6 @@ test('minimal format toolbar highlights text, persists it and removes highlighti
  for(const name of ['1级标题','2级标题','3级标题','引用格式','斜体','下划线','撤销','重做'])await expect(toolbar.getByRole('button',{name,exact:true})).toHaveCount(0)
  await body.fill('这里是重点内容');await body.press('ControlOrMeta+a');await toolbar.getByRole('button',{name:'荧光笔高亮',exact:true}).click();await expect(body.locator('mark')).toHaveText('这里是重点内容')
  await page.getByRole('button',{name:'发送',exact:true}).click();await page.getByRole('button',{name:'查看：这里是重点内容',exact:true}).click();await expect(page.getByRole('article',{name:'记录正文'}).locator('mark')).toHaveText('这里是重点内容')
- await page.getByRole('button',{name:'编辑记录',exact:true}).click();await page.getByRole('form',{name:'编辑记录'}).getByRole('button',{name:'文本格式开关'}).click();await body.press('ControlOrMeta+a');await toolbar.getByRole('button',{name:'荧光笔高亮',exact:true}).click();await expect(body.locator('mark')).toHaveCount(0)
+ await page.getByRole('button',{name:'编辑记录',exact:true}).click();await body.press('ControlOrMeta+a');await toolbar.getByRole('button',{name:'荧光笔高亮',exact:true}).click();await expect(body.locator('mark')).toHaveCount(0)
  await page.getByRole('button',{name:'保存修改',exact:true}).click();await expect(page.getByRole('article',{name:'记录正文'}).locator('mark')).toHaveCount(0)
 })

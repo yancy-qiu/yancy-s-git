@@ -2,7 +2,7 @@ import {choose,manageTypes} from './ui'
 import { test, expect, type Page } from '@playwright/test'
 async function demo(page:Page){await page.goto('/');await page.getByRole('button',{name:'先体验演示版'}).click()}
 async function create(page:Page,title:string){await page.getByRole('button',{name:'展开长文本'}).click();await page.getByRole('textbox',{name:'长文本内容',exact:true}).fill(title);await page.getByRole('button',{name:'发送',exact:true}).click();await expect(page.getByRole('heading',{name:title,exact:true}).first()).toBeVisible()}
-test('demo CRUD, filters, undo, persistence, theme and widget privacy',async({page})=>{
+test('demo CRUD, filters, undo, persistence and theme',async({page})=>{
  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));await demo(page)
  await create(page,'准备产品评审')
  await page.getByRole('button',{name:'编辑记录',exact:true}).click()
@@ -22,13 +22,9 @@ test('demo CRUD, filters, undo, persistence, theme and widget privacy',async({pa
  await expect(page.getByRole('heading',{name:'准备产品评审',exact:true})).toBeVisible()
  await page.getByRole('button',{name:'设置',exact:true}).click()
  await page.getByLabel('外观', {exact:true}).selectOption('dark')
- await page.getByLabel('小组件预览隐藏任务标题').check()
  await page.getByRole('button',{name:'保存设置',exact:true}).click()
  await page.reload();await page.getByRole('button',{name:'先体验演示版'}).click()
  await expect(page.locator('html')).toHaveAttribute('data-theme','dark')
- await page.getByRole('button',{name:/小组件预览/}).click()
- await expect(page.getByRole('dialog').getByText('私密记录',{exact:true}).first()).toBeVisible()
- await page.getByRole('button',{name:'关闭弹窗'}).click()
  await page.getByRole('navigation',{name:'任务视图',exact:true}).getByRole('button',{name:/全部记录/}).click()
  await page.screenshot({path:'/tmp/qingji-desktop.png',fullPage:true})
  expect(errors).toEqual([])
@@ -38,8 +34,8 @@ test('mobile renders without overflow and supports creation',async({page})=>{
  if(await page.getByRole('button',{name:'关闭详情'}).isVisible())await page.getByRole('button',{name:'关闭详情'}).click()
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)
  await page.screenshot({path:'/tmp/qingji-mobile.png',fullPage:true})
- await page.getByRole('button',{name:'小组件预览',exact:true}).click()
- await expect(page.getByRole('dialog',{name:'小组件预览',exact:true})).toBeVisible()
+ await page.getByRole('button',{name:'个人中心',exact:true}).click();await page.getByRole('button',{name:'设置',exact:true}).click()
+ await expect(page.getByRole('dialog',{name:'设置',exact:true})).toBeVisible()
 })
 test('AI creates, clarifies without mutation, and preserves tasks on failure',async({page})=>{
  await demo(page);await page.getByRole('button',{name:'设置',exact:true}).click()

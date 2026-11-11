@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { defineAsyncComponent, computed, onMounted, onUnmounted, reactive, ref, watch, nextTick } from 'vue'
-import { IconCalendar, IconStar, IconSort, IconSortDescending, IconApps, IconSearch, IconSun, IconSettings, IconThunderbolt, IconCheck, IconClockCircle, IconStarFill, IconArrowUp, IconArrowDown, IconMinus, IconFile, IconUserGroup, IconBulb, IconEdit, IconPlus, IconExpand, IconShrink, IconArchive, IconCalendarClock, IconCheckCircle, IconLaunch, IconRefresh, IconDelete, IconUndo, IconMessage, IconAt, IconClose, IconFontColors } from '@arco-design/web-vue/es/icon'
+import { IconCalendar, IconStar, IconSort, IconSortDescending, IconApps, IconSearch, IconSun, IconSettings, IconThunderbolt, IconCheck, IconClockCircle, IconStarFill, IconArrowUp, IconArrowDown, IconMinus, IconFile, IconUserGroup, IconBulb, IconEdit, IconPlus, IconExpand, IconShrink, IconArchive, IconCalendarClock, IconCheckCircle, IconUser, IconRefresh, IconDelete, IconUndo, IconMessage, IconAt, IconClose } from '@arco-design/web-vue/es/icon'
 import zhCN from '@arco-design/web-vue/es/locale/lang/zh-cn'
 const RecordMetadata=defineAsyncComponent(()=>import('./RecordMetadata.vue'))
 const RichInput=defineAsyncComponent(()=>import('./RichInput.vue'))
 import {minutesSchema,minutesText,textMinutes,titledMinutes,type MinutesNode} from './minutesDocument'
 import { useTasks } from './store'
+import AccountControls from './AccountControls.vue'
+import {useAutoDismissNotice} from './useAutoDismissNotice'
 import { supabase, configured } from './supabase'
 import { blankTask, localDate, matches, views, endpointURL, taskFields, type Task, type TaskFields, type Filter } from './domain'
 import { collaborate, testConnection, type Message } from './ai'
@@ -41,8 +43,7 @@ const invalidRange=computed(()=>criteria.date==='custom' && !!criteria.from && !
 function resetFilters(){Object.assign(criteria,defaultFilters())}
 const input=ref(''), contextId=ref(''), messages=ref<Message[]>([]), aiBusy=ref(false), aiError=ref('')
 function focusComposer(){if(richDraft.value)richRef.value?.focus();else document.querySelector<HTMLTextAreaElement>('#chat-input')?.focus({preventScroll:true})}
-const composerFormats=ref(false)
-const expanded=ref(false),richDraft=ref<MinutesNode|null>(null),draftCategory=ref('task'),draftPriority=ref<TaskFields['priority']>('normal'),draftDate=ref(''),longEditingId=ref(''),longEditingStamp=ref(''),richRef=ref<{focus:()=>void;removeMention:(from:number,to:number)=>void;toggleFormat:()=>void}|null>(null)
+const expanded=ref(false),richDraft=ref<MinutesNode|null>(null),draftCategory=ref('task'),draftPriority=ref<TaskFields['priority']>('normal'),draftDate=ref(''),longEditingId=ref(''),longEditingStamp=ref(''),richRef=ref<{focus:()=>void;removeMention:(from:number,to:number)=>void}|null>(null)
 function selectRecord(task:Task){selectedId.value=task.id}
 function richUpdated(doc:MinutesNode,text:string){richDraft.value=doc;input.value=text}
 function toggleLong(){
@@ -50,8 +51,7 @@ function toggleLong(){
  if(!richDraft.value){richDraft.value=titledMinutes(input.value)}
  expanded.value=!expanded.value;focusComposer()
 }
-function toggleComposerFormat(){if(!richDraft.value)richDraft.value=titledMinutes(input.value);expanded.value=true;composerFormats.value=!composerFormats.value}
-function resetComposer(){composerFormats.value=false;mentionOpen.value=false;mentionRange=null;richDraft.value=null;expanded.value=false;longEditingId.value='';longEditingStamp.value='';draftCategory.value='task';draftPriority.value='normal';draftDate.value='';input.value='';contextId.value='';messages.value=[];aiError.value='';try{if(localStorage.getItem(composerDraftKey.value)===lastComposerDraft)localStorage.removeItem(composerDraftKey.value);lastComposerDraft=null}catch{}}
+function resetComposer(){mentionOpen.value=false;mentionRange=null;richDraft.value=null;expanded.value=false;longEditingId.value='';longEditingStamp.value='';draftCategory.value='task';draftPriority.value='normal';draftDate.value='';input.value='';contextId.value='';messages.value=[];aiError.value='';try{if(localStorage.getItem(composerDraftKey.value)===lastComposerDraft)localStorage.removeItem(composerDraftKey.value);lastComposerDraft=null}catch{}}
 let lastComposerDraft:string|null=null,draftStorageDisabled=false
 const composerDraftKey=computed(()=>`qingji.composer.draft.v1.${store.user?.id || (store.demo?'demo':'signed-out')}`)
 function restoreComposer(){
@@ -69,27 +69,26 @@ async function saveLong(){
  }catch(e){aiError.value=e instanceof Error?e.message:'保存失败，内容已保留。'}
 }
 const detailVisible=ref(true)
-const selectedId=ref(''), settingsOpen=ref(false), widgetOpen=ref(false)
+const selectedId=ref(''), settingsOpen=ref(false), accountOpen=ref(false)
 const modal=ref<HTMLElement|null>(null)
 let previousFocus:HTMLElement|null=null
-const email=ref(''), password=ref(''), signup=ref(false), authBusy=ref(false), authNotice=ref(''), notice=ref('')
+const email=ref(''), password=ref(''), signup=ref(false), authBusy=ref(false), authNotice=ref(''), notice=useAutoDismissNotice()
 const key=ref(''), testing=ref(false), connectionNotice=ref('')
 const modelPage=ref(false), rememberModel=ref(true)
 const modelDraft=reactive({endpoint:'',model:'',key:''})
 const modelStorageKey=computed(()=>`qingji.vue.model.v1.${store.user?.id || (store.demo?'demo':'signed-out')}`)
 function readSettings(){try{const value=JSON.parse(localStorage.getItem('qingji.vue.preferences')||'{}');return value && typeof value==='object' && !Array.isArray(value)?value:{}}catch{return {}}}
-const saved=readSettings(), theme=ref(saved.theme||'system'), privacy=ref(!!saved.privacy)
+const saved=readSettings(), theme=ref(saved.theme||'system')
 const endpoint=ref(saved.endpoint||'https://api.openai.com/v1/chat/completions'), model=ref(saved.model||'')
 const selected=computed(()=>store.tasks.find(t=>t.id===selectedId.value)), context=computed(()=>store.tasks.find(t=>t.id===contextId.value)||null)
 const view=computed(()=>views.find(v=>v.id===filter.value)!)
 const visible=computed(()=>filterTasks(store.tasks,filter.value,criteria,today.value))
-const active=computed(()=>store.tasks.filter(t=>!t.completed).slice(0,3))
 const done=computed(()=>store.tasks.filter(t=>t.completed).length)
-const dialogOpen=computed(()=>settingsOpen.value || modelPage.value || typesOpen.value || widgetOpen.value)
+const dialogOpen=computed(()=>settingsOpen.value || modelPage.value || typesOpen.value)
 const undo=ref<Task|null>(null)
 let sessionVersion=0
 let undoTimer:ReturnType<typeof setTimeout>|undefined, refreshTimer:ReturnType<typeof setInterval>|undefined, controller:AbortController|undefined
-watch([theme,privacy],()=>{try{localStorage.setItem('qingji.vue.preferences',JSON.stringify({theme:theme.value,privacy:privacy.value}))}catch{notice.value='浏览器未允许保存设置。'};applyTheme()})
+watch(theme,()=>{try{localStorage.setItem('qingji.vue.preferences',JSON.stringify({theme:theme.value}))}catch{notice.value='浏览器未允许保存设置。'};applyTheme()})
 function loadModel(){
   rememberModel.value=true;key.value='';model.value='';endpoint.value='https://api.openai.com/v1/chat/completions'
   if(!store.user && !store.demo)return
@@ -128,10 +127,10 @@ watch(dialogOpen,async (open)=>{
   if(open){previousFocus=document.activeElement as HTMLElement;setTimeout(()=>modal.value?.querySelector<HTMLElement>('input,select,textarea,button')?.focus(),0)}
   else previousFocus?.focus()
 })
-function clearSessionState(){composerFormats.value=false;mentionOpen.value=false;mentionRange=null;
+function clearSessionState(){mentionOpen.value=false;mentionRange=null;
   lastComposerDraft=null;draftStorageDisabled=false;sessionVersion++;controller?.abort();controller=undefined;aiBusy.value=false
   selectedId.value='';detailVisible.value=true;contextId.value='';messages.value=[];input.value='';richDraft.value=null;expanded.value=false;longEditingId.value='';longEditingStamp.value='';draftCategory.value='task';draftPriority.value='normal';draftDate.value='';input.value=''
-  cancelDetailEdit();settingsOpen.value=false;typesOpen.value=false;modelPage.value=false;modelDraft.key='';widgetOpen.value=false;undo.value=null;clearTimeout(undoTimer);key.value='';aiError.value='';notice.value='';resetFilters()
+  cancelDetailEdit();settingsOpen.value=false;typesOpen.value=false;modelPage.value=false;modelDraft.key='';accountOpen.value=false;undo.value=null;clearTimeout(undoTimer);key.value='';aiError.value='';notice.value='';resetFilters()
 }
 watch(modelStorageKey,()=>{clearSessionState();loadModel();restoreComposer()})
 async function authenticate(){
@@ -226,7 +225,7 @@ async function checkConnection(){
 }
 function validateSettings(){settingsOpen.value=false;notice.value='设置已保存'}
 async function logout(){try{controller?.abort();await store.logout();clearSessionState()}catch(e){notice.value=(e as Error).message}}
-function closeDialog(){if(store.busy)return;settingsOpen.value=false;typesOpen.value=false;modelPage.value=false;modelDraft.key='';widgetOpen.value=false}
+function closeDialog(){if(store.busy)return;settingsOpen.value=false;typesOpen.value=false;modelPage.value=false;modelDraft.key='';accountOpen.value=false}
 function shortcuts(e:KeyboardEvent){
   if(e.key==='Escape')closeDialog()
   if(dialogOpen.value && e.key==='Tab'){
@@ -254,9 +253,9 @@ onUnmounted(()=>{controller?.abort();clearInterval(refreshTimer);clearTimeout(un
     </div></section>
   </main>
   <div v-else class="app-shell" :class="{'detail-open': selected,'details-hidden':!detailVisible,'long-expanded':expanded}" :inert="dialogOpen || undefined">
-    <aside class="sidebar"><a class="brand" href="#" @click.prevent="filter='today'"><span class="brand-icon"><IconSun /></span><em>轻记</em><span>QINGJI</span></a><p class="sidebar-caption">你的日常，轻一点</p><nav aria-label="任务视图"><a-button html-type="submit" v-for="v in views" :key="v.id" :class="{active:filter===v.id}" :aria-current="filter===v.id?'page':undefined" @click="filter=v.id"><span class="nav-icon"><component :is="viewIcons[v.id]" :size="16" :stroke-width="1.8" aria-hidden="true"/></span>{{ v.name }}<span class="count">{{ store.tasks.filter(t=>matches(t,v.id,today)).length }}</span></a-button></nav><div class="sidebar-bottom"><a-button html-type="submit" class="widget-launch" @click="widgetOpen=true"><IconApps :size="16" :stroke-width="1.8"/><span>小组件预览</span><IconLaunch class="widget-arrow" :size="14"/></a-button><div class="sync-note"><span class="status-dot" :class="{demo:store.demo}"></span>{{ store.demo?'演示模式 · 仅本机':store.error?'同步遇到问题':'云端空间' }}<a-button html-type="submit" v-if="!store.demo" class="text-button" @click="store.refresh()" aria-label="刷新任务"><IconRefresh :size="14"/></a-button></div><small v-if="store.synced && !store.demo">上次同步 {{ store.synced }}</small></div></aside>
-    <div class="workspace"><header class="topbar"><span class="breadcrumb">我的空间 <span>/</span> {{ view.name }}</span><div class="top-actions"><span class="account">{{ store.demo?'演示体验':store.user?.email }}</span><a-button html-type="submit" class="icon-button mobile-widget" aria-label="小组件预览" @click="widgetOpen=true"><IconApps :size="16"/></a-button><a-button html-type="submit" class="icon-button" aria-label="设置" @click="settingsOpen=true"><IconSettings /></a-button><a-button html-type="submit" class="text-button" @click="logout">{{ store.demo?'退出演示':'退出登录' }}</a-button></div></header>
-      <nav class="mobile-nav" aria-label="移动端任务视图"><a-button html-type="submit" v-for="v in views" :key="v.id" :class="{active:filter===v.id}" @click="filter=v.id">{{ v.name }}</a-button></nav>
+    <aside class="sidebar"><a class="brand" href="#" @click.prevent="filter='today'"><span class="brand-icon"><IconSun /></span><em>轻记</em><span>QINGJI</span></a><p class="sidebar-caption">你的日常，轻一点</p><nav aria-label="任务视图"><a-button html-type="submit" v-for="v in views" :key="v.id" :class="{active:filter===v.id}" :aria-current="filter===v.id?'page':undefined" @click="filter=v.id"><span class="nav-icon"><component :is="viewIcons[v.id]" :size="16" :stroke-width="1.8" aria-hidden="true"/></span>{{ v.name }}<span class="count">{{ store.tasks.filter(t=>matches(t,v.id,today)).length }}</span></a-button></nav><div class="sidebar-bottom"><AccountControls :email="store.user?.email" :demo="store.demo" @settings="settingsOpen=true" @logout="logout"/></div></aside>
+    <div class="workspace">
+      <div class="mobile-navigation"><nav class="mobile-nav" aria-label="移动端任务视图"><a-button html-type="submit" v-for="v in views" :key="v.id" :class="{active:filter===v.id}" @click="filter=v.id">{{ v.name }}</a-button></nav><a-popover position="br" trigger="click" v-model:popup-visible="accountOpen"><a-button class="mobile-account-button" html-type="button" aria-label="个人中心"><IconUser :size="18"/></a-button><template #content><AccountControls :email="store.user?.email" :demo="store.demo" @settings="accountOpen=false;settingsOpen=true" @logout="accountOpen=false;logout()"/></template></a-popover></div>
       <div v-if="store.demo" class="demo-banner">你正在体验演示空间，记录仅保存在当前浏览器。<a-button html-type="submit" class="text-button" @click="logout">{{ configured?'前往登录':'连接云端后即可同步' }} ↗</a-button></div>
       <div class="page-content"><div class="heading-row"><div><p class="eyebrow">{{ new Date(`${today}T12:00:00`).toLocaleDateString('zh-CN',{month:'long',day:'numeric',weekday:'long'}) }}</p><h1>{{ filter==='today'?'今天，轻装上阵。':view.name }}</h1><p>{{ view.description }}</p></div><a-tag class="workspace-label" color="arcoblue">给今天一点好心情 ☀</a-tag></div>
       <div class="content-layout"><div class="main-column">
@@ -308,17 +307,17 @@ onUnmounted(()=>{controller?.abort();clearInterval(refreshTimer);clearTimeout(un
       <div v-if="messages.length" class="messages" aria-live="polite"><div v-for="(m,i) in messages" :key="i" :class="m.role"><span>{{ m.role==='user'?'你':'轻记' }}</span><p>{{ m.content }}</p></div></div>
       <div v-if="context" class="context-tag"><span>引用：{{ context.title }}</span><a-button html-type="button" :disabled="aiBusy" @click="contextId=''" aria-label="取消引用任务">×</a-button></div>
       <RecordMetadata v-if="expanded && !context" v-model:category="draftCategory" :priority="draftPriority" @update:priority="draftPriority=$event as TaskFields['priority']" v-model:date="draftDate" :categories="categories" :disabled="store.busy || aiBusy" prefix="记录"/>
-      <form @submit.prevent="send"><RichInput v-if="richDraft" external-tools :tools-open="composerFormats" mentions @mention="richMention" ref="richRef" :document="richDraft" :expanded="expanded" :disabled="store.busy || aiBusy" @update="richUpdated" @send="send"/><label class="sr-only" for="chat-input">给 AI 发送消息</label><textarea v-if="!richDraft" id="chat-input" v-model="input" @input="plainMention" @keyup="plainMention" @click="plainMention" :disabled="aiBusy" :placeholder="context?'告诉 AI，你想怎样调整这条任务…':'记录任务，或让 AI 帮你理清下一步…'" maxlength="12000" @keydown.meta.enter.prevent="send" @keydown.ctrl.enter.prevent="send"></textarea>
-        <div class="composer-footer"><a-button html-type="button" class="expand-composer" aria-label="文本格式开关" :aria-expanded="expanded && composerFormats" title="文本格式" :disabled="aiBusy || store.busy" @click="toggleComposerFormat"><IconFontColors :size="18"/></a-button><a-button html-type="button" class="expand-composer" :aria-label="expanded?'收起长文本':'展开长文本'" :title="expanded?'收起':'长文本'" @click="toggleLong"><IconShrink v-if="expanded"/><IconExpand v-else/></a-button><a-popover position="top" trigger="click" popup-container="#mention-popup-layer" update-at-scroll :popup-visible="mentionOpen" @popup-visible-change="mentionOpen=$event" :content-style="{padding:'10px',width:'min(320px, calc(100vw - 36px))'}">
+      <form @submit.prevent="send"><RichInput v-if="richDraft" mentions @mention="richMention" ref="richRef" :document="richDraft" :expanded="expanded" :disabled="store.busy || aiBusy" @update="richUpdated" @send="send"/><label class="sr-only" for="chat-input">给 AI 发送消息</label><textarea v-if="!richDraft" id="chat-input" v-model="input" @input="plainMention" @keyup="plainMention" @click="plainMention" :disabled="aiBusy" :placeholder="context?'告诉 AI，你想怎样调整这条任务…':'记录任务，或让 AI 帮你理清下一步…'" maxlength="12000" @keydown.meta.enter.prevent="send" @keydown.ctrl.enter.prevent="send"></textarea>
+        <div class="composer-footer"><a-popover position="top" trigger="click" popup-container="#mention-popup-layer" update-at-scroll :popup-visible="mentionOpen" @popup-visible-change="mentionOpen=$event" :content-style="{padding:'10px',width:'min(320px, calc(100vw - 36px))'}">
  <a-button class="expand-composer" html-type="button" aria-label="引用任务" title="@ 引用任务" :disabled="aiBusy" @click="openMentions"><IconAt :size="18"/></a-button>
  <template #content><div class="mention-picker" @keydown="mentionKeydown"><a-input v-model="mentionQuery" size="small" placeholder="搜索已有任务" :input-attrs="{'aria-label':'搜索引用任务'}" allow-clear @input="mentionIndex=0"><template #prefix><IconSearch/></template></a-input><div class="mention-results" role="listbox" aria-label="引用已有任务"><button v-for="(task,index) in mentionTasks" :key="task.id" html-type="button" type="button" role="option" :aria-selected="mentionIndex===index" @mousedown.prevent @click="chooseMention(task)"><IconFile :size="16"/><span>{{ task.title }}</span><small>{{ categories[task.category] }}</small></button><p v-if="!mentionTasks.length">没有匹配的任务</p></div></div></template>
- </a-popover><div class="composer-send"><a-button html-type="button" class="composer-model" :title="model || '配置你的模型'" @click="openModel"><IconThunderbolt :size="14"/><span>{{ model || '配置模型' }}</span></a-button><span v-if="aiBusy" class="composer-status" role="status">正在处理…</span><a-tooltip content="发送 · ⌘ / Ctrl + Enter"><a-button html-type="submit" type="primary" class="primary send-icon" :disabled="aiBusy || store.busy || !input.trim()" :aria-label="aiBusy?'正在发送':'发送'" :title="context?'修改引用任务 · ⌘ / Ctrl + Enter':richDraft?'保存记录 · ⌘ / Ctrl + Enter':'⌘ / Ctrl + Enter 发送'"><IconArrowUp :size="19"/></a-button></a-tooltip></div></div>
+ </a-popover><a-button html-type="button" class="expand-composer" :aria-label="expanded?'收起长文本':'展开长文本'" :title="expanded?'收起':'长文本'" @click="toggleLong"><IconShrink v-if="expanded"/><IconExpand v-else/></a-button><div class="composer-send"><a-button html-type="button" class="composer-model" :title="model || '配置你的模型'" @click="openModel"><IconThunderbolt :size="14"/><span>{{ model || '配置模型' }}</span></a-button><span v-if="aiBusy" class="composer-status" role="status">正在处理…</span><a-tooltip content="发送 · ⌘ / Ctrl + Enter"><a-button html-type="submit" type="primary" class="primary send-icon" :disabled="aiBusy || store.busy || !input.trim()" :aria-label="aiBusy?'正在发送':'发送'" :title="context?'修改引用任务 · ⌘ / Ctrl + Enter':richDraft?'保存记录 · ⌘ / Ctrl + Enter':'⌘ / Ctrl + Enter 发送'"><IconArrowUp :size="19"/></a-button></a-tooltip></div></div>
       </form><p v-if="aiError" class="error" role="alert">{{ aiError }}</p>
     </section>
     <div id="mention-popup-layer" class="mention-popup-layer"></div>
   </div>
-  <div v-if="dialogOpen" :class="{'model-config-backdrop':modelPage}" class="modal-backdrop" @click.self="closeDialog"><section ref="modal" class="modal"  role="dialog" aria-modal="true" :aria-label="settingsOpen?'设置':modelPage?'模型配置':typesOpen?'管理任务类型':'小组件预览'"><a-button html-type="submit" class="modal-close icon-button" @click="closeDialog" aria-label="关闭弹窗">×</a-button>
-    <form v-if="settingsOpen" @submit.prevent="validateSettings"><p class="eyebrow">MAKE IT YOURS</p><h2>你的轻记，你来定义</h2><label>外观<select v-model="theme" aria-label="外观"><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></label><label class="checkbox"><input v-model="privacy" type="checkbox">小组件预览隐藏任务标题</label><hr><h3>模型配置</h3><p class="muted">在独立界面管理模型服务与密钥。</p><a-button html-type="button" class="full" @click="openModel">模型配置 →</a-button><a-button html-type="submit" type="primary" class="primary full">保存设置</a-button></form>
+  <div v-if="dialogOpen" :class="{'model-config-backdrop':modelPage}" class="modal-backdrop" @click.self="closeDialog"><section ref="modal" class="modal"  role="dialog" aria-modal="true" :aria-label="settingsOpen?'设置':modelPage?'模型配置':'管理任务类型'"><a-button html-type="submit" class="modal-close icon-button" @click="closeDialog" aria-label="关闭弹窗">×</a-button>
+    <form v-if="settingsOpen" @submit.prevent="validateSettings"><p class="eyebrow">MAKE IT YOURS</p><h2>你的轻记，你来定义</h2><label>外观<select v-model="theme" aria-label="外观"><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></label><a-button v-if="!store.demo" html-type="button" class="settings-refresh" @click="settingsOpen=false;store.refresh()"><IconRefresh :size="15"/>刷新任务</a-button><hr><h3>模型配置</h3><p class="muted">在独立界面管理模型服务与密钥。</p><a-button html-type="button" class="full" @click="openModel">模型配置 →</a-button><a-button html-type="submit" type="primary" class="primary full">保存设置</a-button></form>
     <form v-else-if="modelPage" @submit.prevent="saveModel" autocomplete="off">
       <a-button html-type="button" class="text-button" @click="closeDialog();settingsOpen=true">← 返回设置</a-button>
       <p class="eyebrow">YOUR MODEL, YOUR CONTROL</p><h2>模型配置</h2>
@@ -339,8 +338,8 @@ onUnmounted(()=>{controller?.abort();clearInterval(refreshTimer);clearTimeout(un
       <div class="type-manager-list"><div v-for="(name,id) in categories" :key="id" class="type-manager-row"><span>{{ name }}</span><small v-if="['task','meeting','progress','need'].includes(id)">基础类型</small><a-button :aria-label="'编辑类型：'+name" :disabled="store.categoryBusy || !store.categoryReady" @click="typeEditing=id;typeName=name;typeNotice=''">编辑</a-button><a-button v-if="!['task','meeting','progress','need'].includes(id)" class="danger" :aria-label="'删除类型：'+name" :disabled="store.categoryBusy || !store.categoryReady" @click="deleteType(id)">删除</a-button></div></div>
       <p class="muted">{{ store.demo?'演示模式：类型仅保存在当前浏览器。':'类型按账号保存在云端，可在其他设备恢复。' }}</p>
     </div>
-    <div v-else><p class="eyebrow">A LITTLE SPACE FOR FOCUS</p><h2>小组件预览</h2><p class="muted">站内交互预览，不是系统桌面组件。</p><div class="widget"><div class="widget-heading"><em>轻记</em><span>{{ today }}</span></div><h3>今天，做一点就好。</h3><div v-for="t in active" :key="t.id" class="widget-record"><a-button html-type="submit" class="check" :disabled="store.busy" :aria-label="'小组件完成：'+t.title" @click.stop="toggle(t)"></a-button><a-button html-type="submit" @click="selectedId=t.id;widgetOpen=false">{{ privacy?'私密记录':t.title }}</a-button></div><p v-if="!active.length">都完成了，好好享受这份轻松。</p></div></div>
+
   </section></div>
-  <div v-if="notice || undo" class="toast" role="status"><span>{{ undo?'记录已删除':notice }}</span><a-button html-type="submit" v-if="undo" :disabled="store.busy" @click="restore">撤销</a-button><a-button html-type="submit" v-else @click="notice=''" aria-label="关闭提示">×</a-button></div>
+  <div v-if="notice || undo" class="toast" role="status"><span>{{ undo?'记录已删除':notice }}</span><a-button html-type="submit" v-if="undo" :disabled="store.busy" @click="restore">撤销</a-button></div>
  </a-config-provider>
 </template>

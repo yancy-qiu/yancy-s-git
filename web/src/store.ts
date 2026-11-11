@@ -5,7 +5,7 @@ import type { User, RealtimeChannel } from '@supabase/supabase-js'
 import { supabase } from './supabase'
 import { categories as builtinCategories, categoryId, blankTask, localDate, taskFields, type Task, type TaskFields } from './domain'
 export const useTasks=defineStore('tasks',()=>{
-  const user=ref<User|null>(null), tasks=ref<Task[]>([]), demo=ref(false), loading=ref(true), busy=ref(false), error=ref(''), synced=ref('')
+  const user=ref<User|null>(null), tasks=ref<Task[]>([]), demo=ref(false), loading=ref(true), busy=ref(false), error=ref('')
   const categoryNames=ref<Record<string,string>>({...builtinCategories}), categoryReady=ref(false), categoryBusy=ref(false), categoryError=ref('')
   let categoryVersion=0
   const categoryCache='qingji.vue.demo.categories.v1'
@@ -58,11 +58,11 @@ export const useTasks=defineStore('tasks',()=>{
     const result=await supabase.from('tasks').select('*').eq('user_id',user.value.id).is('deleted_at',null).order('created_at',{ascending:false})
     if(version!==generation || id!==request) return
     if(result.error) { error.value='云端读取失败，请检查网络、数据库配置后重试。'; return }
-    tasks.value=result.data as Task[]; synced.value=new Date().toLocaleTimeString(); error.value=''
+    tasks.value=result.data as Task[]; error.value=''
   }
   async function setUser(next:User|null){
     generation++; request++; if(channel && supabase) void supabase.removeChannel(channel)
-    channel=null;categoryVersion++;categoryNames.value={...builtinCategories};categoryReady.value=false;categoryError.value=''; user.value=next; tasks.value=[]; synced.value=''; error.value=''
+    channel=null;categoryVersion++;categoryNames.value={...builtinCategories};categoryReady.value=false;categoryError.value=''; user.value=next; tasks.value=[]; error.value=''
     if(next && supabase){
       demo.value=false
       channel=supabase.channel(`tasks:${next.id}`).on('postgres_changes',{event:'*',schema:'public',table:'tasks',filter:`user_id=eq.${next.id}`},()=>{void refresh()}).subscribe()
@@ -121,7 +121,7 @@ export const useTasks=defineStore('tasks',()=>{
       const next=tasks.value.filter(t=>t.id!==saved.id)
       if(!saved.deleted_at) next.unshift(saved)
       if(demo.value) localStorage.setItem(demoKey,JSON.stringify(next))
-      tasks.value=next; synced.value=new Date().toLocaleTimeString()
+      tasks.value=next
       return saved
     }catch(e){error.value=e instanceof Error?e.message:'保存失败';throw e}finally{request++;busy.value=false}
   }
@@ -129,5 +129,5 @@ export const useTasks=defineStore('tasks',()=>{
     if(supabase && user.value){const {error:e}=await supabase.auth.signOut();if(e) throw Error('退出失败，请重试。')}
     demo.value=false; await setUser(null); sessionStorage.removeItem('qingji.vue.ai-key')
   }
-  return {categoryNames,categoryReady,categoryBusy,categoryError,refreshCategories,changeCategory,user,tasks,demo,loading,busy,error,synced,init,refresh,enterDemo,save,logout}
+  return {categoryNames,categoryReady,categoryBusy,categoryError,refreshCategories,changeCategory,user,tasks,demo,loading,busy,error,init,refresh,enterDemo,save,logout}
 })
