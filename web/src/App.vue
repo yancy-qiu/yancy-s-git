@@ -127,7 +127,7 @@ watch(dialogOpen,async (open)=>{
 function clearSessionState(){
   lastComposerDraft=null;draftStorageDisabled=false;sessionVersion++;controller?.abort();controller=undefined;aiBusy.value=false
   selectedId.value='';detailVisible.value=true;contextId.value='';messages.value=[];input.value='';richDraft.value=null;expanded.value=false;longEditingId.value='';longEditingStamp.value='';draftCategory.value='task';draftPriority.value='normal';draftDate.value='';input.value=''
-  settingsOpen.value=false;typesOpen.value=false;modelPage.value=false;modelDraft.key='';widgetOpen.value=false;undo.value=null;clearTimeout(undoTimer);key.value='';aiError.value='';notice.value='';resetFilters()
+  cancelDetailEdit();settingsOpen.value=false;typesOpen.value=false;modelPage.value=false;modelDraft.key='';widgetOpen.value=false;undo.value=null;clearTimeout(undoTimer);key.value='';aiError.value='';notice.value='';resetFilters()
 }
 watch(modelStorageKey,()=>{clearSessionState();loadModel();restoreComposer()})
 async function authenticate(){
@@ -140,19 +140,38 @@ async function authenticate(){
     password.value=''
   }catch(e){authNotice.value=e instanceof Error?e.message:'登录失败'}finally{authBusy.value=false}
 }
+const detailDraft=ref<{id:string;stamp:string;document:MinutesNode;category:string;priority:TaskFields['priority'];date:string}|null>(null)
+const detailError=ref('')
 function openEditor(task?:Task){
  if(store.busy||aiBusy.value)return
  if(!task){focusComposer();return}
- if(richDraft.value && input.value.trim() && longEditingId.value!==task.id){aiError.value='输入区还有未保存内容，请先发送或清空后再编辑其他记录。';focusComposer();return}
- richDraft.value=task.document || textMinutes([task.title,task.content].filter(Boolean).join('\n'));input.value=minutesText(richDraft.value);draftCategory.value=task.category;draftPriority.value=task.priority;draftDate.value=task.due_date;longEditingId.value=task.id;longEditingStamp.value=task.updated_at;contextId.value='';expanded.value=true;if(window.innerWidth<=1050)closeDetails();focusComposer()
+ if(detailDraft.value && detailDraft.value.id!==task.id){notice.value='请先保存或取消另一条记录的编辑。';selectedId.value=detailDraft.value.id;return}
+ detailError.value=''
+ detailDraft.value ||= {id:task.id,stamp:task.updated_at,document:task.document || textMinutes([task.title,task.content].filter(Boolean).join('\n')),category:task.category,priority:task.priority,date:task.due_date}
 }
+function cancelDetailEdit(){detailDraft.value=null;detailError.value=''}
+async function saveDetail(){
+ const draft=detailDraft.value,version=sessionVersion
+ if(!draft || store.busy)return
+ detailError.value=''
+ try{
+  const existing=store.tasks.find(t=>t.id===draft.id)
+  if(!existing || existing.updated_at!==draft.stamp)throw Error('原记录已有变化，请核对后再保存。编辑内容已保留。')
+  const doc=minutesSchema.parse(draft.document),text=minutesText(doc).trim()
+  if(!text)throw Error('请填写记录内容。')
+  await store.save({...existing,title:text.split('\n').find(line=>line.trim())!.trim().slice(0,120),content:text,record_kind:'meeting_minutes',document:doc,category:draft.category,priority:draft.priority,due_date:draft.date},existing)
+  if(version!==sessionVersion)return
+  cancelDetailEdit();notice.value='记录已更新'
+ }catch(e){if(version===sessionVersion)detailError.value=e instanceof Error?e.message:'保存失败，编辑内容已保留。'}
+}
+
 async function toggle(task:Task){try{await store.save({...task,completed:!task.completed},task);notice.value=task.completed?'已恢复':'完成得很好，继续轻松前行。'}catch{}}
 async function postpone(task:Task){const date=new Date();date.setDate(date.getDate()+1);try{await store.save({...task,due_date:localDate(date)},task);notice.value='已延后到明天'}catch{}}
 async function remove(task:Task){try{undo.value=await store.save(task,task,new Date().toISOString());selectedId.value='';clearTimeout(undoTimer);undoTimer=setTimeout(()=>undo.value=null,6000);notice.value='记录已删除'}catch{}}
 async function restore(){if(!undo.value)return;try{await store.save(undo.value,undo.value);undo.value=null;notice.value='已撤销删除'}catch{}}
 function closeDetails(){selectedId.value='';detailVisible.value=false}
 watch(selectedId,id=>{if(id)detailVisible.value=true})
-function reference(task:Task){if(richDraft.value && input.value.trim()){aiError.value='请先保存或清空当前内容，再引用任务。';focusComposer();return};contextId.value=task.id;if(window.innerWidth<=1050)selectedId.value='';focusComposer()}
+function reference(task:Task){if(richDraft.value && input.value.trim()){aiError.value='请先保存当前内容，再引用任务。';focusComposer();return};contextId.value=task.id;if(window.innerWidth<=1050)selectedId.value='';focusComposer()}
 async function send(){
   if(!input.value.trim()||aiBusy.value||store.busy)return
   if(richDraft.value){await saveLong();return}
@@ -172,7 +191,7 @@ async function checkConnection(){
 }
 function validateSettings(){settingsOpen.value=false;notice.value='设置已保存'}
 async function logout(){try{controller?.abort();await store.logout();clearSessionState()}catch(e){notice.value=(e as Error).message}}
-function closeDialog(){if(store.busy)return;settingsOpen.value=false;typesOpen.value=false;modelPage.value=false;modelDraft.key='';widgetOpen.value=false}
+function closeDialog(){if(store.busy)return;cancelDetailEdit();settingsOpen.value=false;typesOpen.value=false;modelPage.value=false;modelDraft.key='';widgetOpen.value=false}
 function shortcuts(e:KeyboardEvent){
   if(e.key==='Escape')closeDialog()
   if(dialogOpen.value && e.key==='Tab'){
@@ -235,13 +254,18 @@ onUnmounted(()=>{controller?.abort();clearInterval(refreshTimer);clearTimeout(un
             </tr></tbody></table></div>
         </section>
 <footer class="page-footer"><span>一步一步，也是在向前。</span><span>{{ done }} 条已完成 · {{ store.tasks.length }} 条记录</span></footer>
-      </div><aside v-if="selected" class="detail-panel" aria-label="记录详情"><div class="detail-top"><span>记录详情</span><a-button html-type="submit" class="icon-button" @click="closeDetails" aria-label="关闭详情">×</a-button></div><div class="detail-category-row"><span class="category" :title="categories[selected.category] || '未命名类型'">{{ categories[selected.category] || '未命名类型' }}</span><div class="detail-actions" role="group" aria-label="记录操作">
+      </div><aside v-if="selected" class="detail-panel" aria-label="记录详情"><div class="detail-top"><span>记录详情</span><a-button html-type="submit" class="icon-button" @click="closeDetails" aria-label="关闭详情">×</a-button></div><div class="detail-category-row"><span class="category" :title="categories[selected.category] || '未命名类型'">{{ categories[selected.category] || '未命名类型' }}</span><div v-if="detailDraft?.id!==selected.id" class="detail-actions" role="group" aria-label="记录操作">
  <a-tooltip content="与 AI 协作"><a-button html-type="button" type="text" class="detail-action" :disabled="aiBusy" aria-label="与 AI 协作" @click="reference(selected)"><IconMessage :size="18" :stroke-width="1.8"/></a-button></a-tooltip>
  <a-tooltip content="编辑记录"><a-button html-type="button" type="text" class="detail-action" aria-label="编辑记录" @click="openEditor(selected)"><IconEdit :size="18" :stroke-width="1.8"/></a-button></a-tooltip>
  <a-tooltip :content="selected.completed?'恢复记录':'标记完成'"><a-button html-type="button" type="text" class="detail-action" :disabled="store.busy" :aria-label="selected.completed?'恢复记录':'标记完成'" @click="toggle(selected)"><IconUndo v-if="selected.completed" :size="18" :stroke-width="1.8"/><IconCheck v-else :size="18" :stroke-width="1.8"/></a-button></a-tooltip>
  <a-tooltip content="延后到明天"><a-button html-type="button" type="text" class="detail-action" :disabled="store.busy" aria-label="延后到明天" @click="postpone(selected)"><IconClockCircle :size="18" :stroke-width="1.8"/></a-button></a-tooltip>
  <a-tooltip content="删除记录"><a-button html-type="button" type="text" class="detail-action danger" :disabled="store.busy" aria-label="删除记录" @click="remove(selected)"><IconDelete :size="18" :stroke-width="1.8"/></a-button></a-tooltip>
-</div></div><h2 v-if="!selected.document">{{ selected.title }}</h2><RichInput v-if="selected.document" :document="selected.document" readonly/><p v-else class="detail-content">{{ selected.content }}</p><dl><dt>安排</dt><dd>{{ selected.due_date || '尚未安排' }} {{ selected.due_time }}</dd><dt>优先级</dt><dd>{{ {high:'重要',normal:'普通',low:'较低'}[selected.priority] }}</dd><dt>提醒设置</dt><dd>{{ selected.reminder?'已标记提醒':'未设置' }}（暂不触发通知）</dd></dl><section v-if="selected.summary"><h3>✦ 整理摘要</h3><p>{{ selected.summary }}</p></section><ol v-if="selected.action_items.length"><li v-for="(item,i) in selected.action_items" :key="i">{{ item }}</li></ol></aside><aside v-else-if="detailVisible" class="detail-panel detail-placeholder" aria-label="记录详情"><div class="detail-top"><span>记录详情</span><a-button class="icon-button" @click="closeDetails" aria-label="关闭详情">×</a-button></div><div><span class="detail-placeholder-icon"><IconCheck /></span><h2>选择一条任务</h2><p>点击左侧任务列表，随时查看安排、内容和下一步行动。</p></div></aside></div>
+</div></div><form v-if="detailDraft?.id===selected.id" class="detail-editor" aria-label="编辑记录" @submit.prevent="saveDetail">
+ <div class="detail-edit-options"><label>类型<select v-model="detailDraft.category" :disabled="store.busy" aria-label="编辑类型"><option v-for="(name,id) in categories" :key="id" :value="id">{{ name }}</option></select></label><label>优先级<select v-model="detailDraft.priority" :disabled="store.busy" aria-label="编辑优先级"><option value="normal">普通</option><option value="high">重要</option><option value="low">较低</option></select></label><label>日期<input v-model="detailDraft.date" type="date" :disabled="store.busy" aria-label="编辑日期"></label></div>
+ <RichInput :document="detailDraft.document" expanded :disabled="store.busy" @update="doc=>{if(detailDraft)detailDraft.document=doc}" @send="saveDetail"/>
+ <p v-if="detailError" role="alert" class="error">{{ detailError }}</p>
+ <div class="detail-edit-footer"><a-button html-type="button" :disabled="store.busy" @click="cancelDetailEdit">取消</a-button><a-button html-type="submit" type="primary" :disabled="store.busy">{{ store.busy?'保存中…':'保存修改' }}</a-button></div>
+ </form><template v-else><h2 v-if="!selected.document">{{ selected.title }}</h2><RichInput v-if="selected.document" :document="selected.document" readonly/><p v-else class="detail-content">{{ selected.content }}</p><dl><dt>安排</dt><dd>{{ selected.due_date || '尚未安排' }} {{ selected.due_time }}</dd><dt>优先级</dt><dd>{{ {high:'重要',normal:'普通',low:'较低'}[selected.priority] }}</dd><dt>提醒设置</dt><dd>{{ selected.reminder?'已标记提醒':'未设置' }}（暂不触发通知）</dd></dl><section v-if="selected.summary"><h3>✦ 整理摘要</h3><p>{{ selected.summary }}</p></section><ol v-if="selected.action_items.length"><li v-for="(item,i) in selected.action_items" :key="i">{{ item }}</li></ol></template></aside><aside v-else-if="detailVisible" class="detail-panel detail-placeholder" aria-label="记录详情"><div class="detail-top"><span>记录详情</span><a-button class="icon-button" @click="closeDetails" aria-label="关闭详情">×</a-button></div><div><span class="detail-placeholder-icon"><IconCheck /></span><h2>选择一条任务</h2><p>点击左侧任务列表，随时查看安排、内容和下一步行动。</p></div></aside></div>
       </div>
     </div>
     <section class="copilot compact-composer" :class="{'composer-expanded':expanded}" aria-label="AI 任务对话">
@@ -249,7 +273,7 @@ onUnmounted(()=>{controller?.abort();clearInterval(refreshTimer);clearTimeout(un
       <div v-if="context" class="context-tag"><span>引用：{{ context.title }}</span><a-button html-type="button" :disabled="aiBusy" @click="contextId=''" aria-label="取消引用任务">×</a-button></div>
       <div v-if="expanded" class="composer-options"><label>类型<select v-model="draftCategory" :disabled="store.busy" aria-label="记录类型"><option v-for="(name,id) in categories" :key="id" :value="id">{{name}}</option></select></label><label>优先级<select v-model="draftPriority" :disabled="store.busy" aria-label="记录优先级"><option value="normal">普通</option><option value="high">重要</option><option value="low">较低</option></select></label><label>日期<input v-model="draftDate" :disabled="store.busy" type="date" aria-label="记录日期"></label><span v-if="longEditingId">编辑记录</span></div>
       <form @submit.prevent="send"><RichInput v-if="richDraft" ref="richRef" :document="richDraft" :expanded="expanded" :disabled="store.busy" @update="richUpdated" @send="send"/><label class="sr-only" for="chat-input">给 AI 发送消息</label><textarea v-if="!richDraft" id="chat-input" v-model="input" :disabled="aiBusy" :placeholder="context?'告诉 AI，你想怎样调整这条任务…':'记录任务，或让 AI 帮你理清下一步…'" maxlength="12000" @keydown.meta.enter.prevent="send" @keydown.ctrl.enter.prevent="send"></textarea>
-        <div class="composer-footer"><a-button html-type="button" class="expand-composer" :aria-label="expanded?'收起长文本':'展开长文本'" :title="expanded?'收起':'长文本'" @click="toggleLong"><IconShrink v-if="expanded"/><IconExpand v-else/></a-button><a-button html-type="button" class="composer-model" :title="model || '配置你的模型'" @click="openModel"><IconThunderbolt :size="14"/><span>{{ model || '配置模型' }}</span></a-button><div class="composer-send"><a-button v-if="richDraft" html-type="button" class="text-button discard-input" :disabled="store.busy" @click="resetComposer">清空</a-button><span v-if="aiBusy" class="composer-status" role="status">正在处理…</span><a-tooltip content="发送 · ⌘ / Ctrl + Enter"><a-button html-type="submit" type="primary" class="primary send-icon" :disabled="aiBusy || store.busy || !input.trim()" :aria-label="aiBusy?'正在发送':'发送'" :title="richDraft?'保存记录 · ⌘ / Ctrl + Enter':'⌘ / Ctrl + Enter 发送'"><IconArrowUp :size="19"/></a-button></a-tooltip></div></div>
+        <div class="composer-footer"><a-button html-type="button" class="expand-composer" :aria-label="expanded?'收起长文本':'展开长文本'" :title="expanded?'收起':'长文本'" @click="toggleLong"><IconShrink v-if="expanded"/><IconExpand v-else/></a-button><div class="composer-send"><a-button html-type="button" class="composer-model" :title="model || '配置你的模型'" @click="openModel"><IconThunderbolt :size="14"/><span>{{ model || '配置模型' }}</span></a-button><span v-if="aiBusy" class="composer-status" role="status">正在处理…</span><a-tooltip content="发送 · ⌘ / Ctrl + Enter"><a-button html-type="submit" type="primary" class="primary send-icon" :disabled="aiBusy || store.busy || !input.trim()" :aria-label="aiBusy?'正在发送':'发送'" :title="richDraft?'保存记录 · ⌘ / Ctrl + Enter':'⌘ / Ctrl + Enter 发送'"><IconArrowUp :size="19"/></a-button></a-tooltip></div></div>
       </form><p v-if="aiError" class="error" role="alert">{{ aiError }}</p>
     </section>
   </div>
