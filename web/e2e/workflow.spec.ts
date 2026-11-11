@@ -222,6 +222,8 @@ test('detail actions remain a compact accessible icon row across screen sizes',a
  await demo(page);await page.getByRole('button',{name:'查看：给今天留一点清晰',exact:true}).click()
  const actions=page.getByRole('group',{name:'记录操作',exact:true})
  await expect(actions.getByRole('button')).toHaveCount(5)
+ expect(await actions.evaluate(el=>getComputedStyle(el).justifyContent)).toBe('flex-end')
+ for(const button of await actions.getByRole('button').all())expect(await button.evaluate(el=>getComputedStyle(el).backgroundColor)).toBe('rgba(0, 0, 0, 0)')
  for(const width of [1440,905,390]){
   await page.setViewportSize({width,height:921})
   const boxes=await actions.getByRole('button').evaluateAll(items=>items.map(el=>{const r=el.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}}))
