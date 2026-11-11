@@ -228,6 +228,12 @@ test('detail actions remain a compact accessible icon row across screen sizes',a
   await page.setViewportSize({width,height:921})
   const boxes=await actions.getByRole('button').evaluateAll(items=>items.map(el=>{const r=el.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}}))
   expect((await actions.boundingBox())!.height).toBeLessThanOrEqual(44)
+  const badge=await page.locator('.detail-category-row>.category').boundingBox()
+  const toolbar=await actions.boundingBox()
+  const row=await page.locator('.detail-category-row').boundingBox()
+  expect(Math.abs(badge!.y+badge!.height/2-toolbar!.y-toolbar!.height/2)).toBeLessThan(1)
+  expect(Math.abs(toolbar!.x+toolbar!.width-row!.x-row!.width)).toBeLessThan(1)
+  expect(badge!.x+badge!.width).toBeLessThanOrEqual(toolbar!.x)
   for(const box of boxes){expect(box.height).toBe(32);expect(box.width).toBe(32);expect(box.y).toBe(boxes[0].y)}
  }
  await page.setViewportSize({width:905,height:921});await page.screenshot({path:'/tmp/qingji-compact-detail-actions.png',animations:'disabled'})
