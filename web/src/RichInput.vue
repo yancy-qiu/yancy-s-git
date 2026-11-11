@@ -4,6 +4,7 @@ import {EditorContent,useEditor} from '@tiptap/vue-3'
 import StarterKit from '@tiptap/starter-kit'
 import Highlight from '@tiptap/extension-highlight'
 import FormatIcon from './FormatIcon.vue'
+import {isolateSelectedBlocks} from './selectionBlocks'
 import Underline from '@tiptap/extension-underline'
 import Link from '@tiptap/extension-link'
 import TaskList from '@tiptap/extension-task-list'
@@ -30,9 +31,9 @@ onBeforeUnmount(()=>editor.value?.destroy())
   <div v-if="editor && expanded && !readonly" class="format-strip">
 
    <div class="rich-tools" role="toolbar" aria-label="文本格式" @mousedown.prevent>
-   <a-button html-type="button" aria-label="标题格式" title="标题 / 正文" :disabled="disabled" :aria-pressed="editor.isActive('heading',{level:2})" @click="editor.chain().focus().toggleHeading({level:2}).run()"><FormatIcon name="heading"/></a-button>
+   <a-button html-type="button" aria-label="标题格式" title="标题 / 正文" :disabled="disabled" :aria-pressed="editor.isActive('heading',{level:2})" @click="editor.chain().focus().command(isolateSelectedBlocks).toggleHeading({level:2}).run()"><FormatIcon name="heading"/></a-button>
    <a-button html-type="button" title="加粗" :disabled="disabled" aria-label="加粗" :aria-pressed="editor.isActive('bold')" @click="editor.chain().focus().toggleBold().run()"><FormatIcon name="bold"/></a-button><a-button html-type="button"  :disabled="disabled" aria-label="荧光笔高亮" title="选中文字后高亮，再点一次取消" :aria-pressed="editor.isActive('highlight')" @click="editor.chain().focus().toggleHighlight().run()"><span class="highlight-swatch" aria-hidden="true"></span></a-button>
-   <span class="format-divider" aria-hidden="true"></span><a-button html-type="button" title="编号列表" :disabled="disabled" aria-label="编号列表" :aria-pressed="editor.isActive('orderedList')" @click="editor.chain().focus().toggleOrderedList().run()"><FormatIcon name="ordered"/></a-button><a-button html-type="button" title="无序列表" :disabled="disabled" aria-label="无序列表" :aria-pressed="editor.isActive('bulletList')" @click="editor.chain().focus().toggleBulletList().run()"><FormatIcon name="bullet"/></a-button><a-button html-type="button" title="勾选清单" :disabled="disabled" aria-label="勾选清单" :aria-pressed="editor.isActive('taskList')" @click="editor.chain().focus().toggleTaskList().run()"><FormatIcon name="checklist"/></a-button>
+   <span class="format-divider" aria-hidden="true"></span><a-button html-type="button" title="编号列表" :disabled="disabled" aria-label="编号列表" :aria-pressed="editor.isActive('orderedList')" @click="editor.chain().focus().command(isolateSelectedBlocks).toggleOrderedList().run()"><FormatIcon name="ordered"/></a-button><a-button html-type="button" title="无序列表" :disabled="disabled" aria-label="无序列表" :aria-pressed="editor.isActive('bulletList')" @click="editor.chain().focus().command(isolateSelectedBlocks).toggleBulletList().run()"><FormatIcon name="bullet"/></a-button><a-button html-type="button" title="勾选清单" :disabled="disabled" aria-label="勾选清单" :aria-pressed="editor.isActive('taskList')" @click="editor.chain().focus().command(isolateSelectedBlocks).toggleTaskList().run()"><FormatIcon name="checklist"/></a-button>
   </div>
   </div>
   <EditorContent :editor="editor"/>
