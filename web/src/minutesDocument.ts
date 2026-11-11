@@ -19,3 +19,6 @@ export function minutesText(doc:MinutesNode):string{
  const text=(n:MinutesNode):string=>n.type==='text'?n.text||'':n.type==='hardBreak'?'\n':(n.content||[]).map(text).join(['doc','bulletList','orderedList','taskList','listItem','taskItem','blockquote'].includes(n.type)?'\n':'')
  return text(doc)
 }
+
+// Only initialize a title for newly composed documents; preserve saved formatting.
+export function titledMinutes(text:string):MinutesNode{const doc=textMinutes(text);doc.content![0]={...doc.content![0],type:"heading",attrs:{level:2}};return doc}

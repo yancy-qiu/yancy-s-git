@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { defineAsyncComponent, computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { IconCalendar, IconStar, IconSort, IconSortDescending, IconApps, IconSearch, IconSun, IconSettings, IconThunderbolt, IconCheck, IconClockCircle, IconStarFill, IconArrowUp, IconArrowDown, IconMinus, IconFile, IconUserGroup, IconBulb, IconEdit, IconPlus, IconExpand, IconShrink, IconArchive, IconCalendarClock, IconCheckCircle, IconLaunch, IconRefresh, IconDelete, IconUndo, IconMessage } from '@arco-design/web-vue/es/icon'
+import { defineAsyncComponent, computed, onMounted, onUnmounted, reactive, ref, watch, nextTick } from 'vue'
+import { IconCalendar, IconStar, IconSort, IconSortDescending, IconApps, IconSearch, IconSun, IconSettings, IconThunderbolt, IconCheck, IconClockCircle, IconStarFill, IconArrowUp, IconArrowDown, IconMinus, IconFile, IconUserGroup, IconBulb, IconEdit, IconPlus, IconExpand, IconShrink, IconArchive, IconCalendarClock, IconCheckCircle, IconLaunch, IconRefresh, IconDelete, IconUndo, IconMessage, IconAt, IconClose, IconFontColors } from '@arco-design/web-vue/es/icon'
+import zhCN from '@arco-design/web-vue/es/locale/lang/zh-cn'
+const RecordMetadata=defineAsyncComponent(()=>import('./RecordMetadata.vue'))
 const RichInput=defineAsyncComponent(()=>import('./RichInput.vue'))
-import {minutesSchema,minutesText,textMinutes,type MinutesNode} from './minutesDocument'
+import {minutesSchema,minutesText,textMinutes,titledMinutes,type MinutesNode} from './minutesDocument'
 import { useTasks } from './store'
 import { supabase, configured } from './supabase'
 import { blankTask, localDate, matches, views, endpointURL, taskFields, type Task, type TaskFields, type Filter } from './domain'
@@ -37,22 +39,25 @@ function filterOptionIcon(field:string,value:string){
 }
 const invalidRange=computed(()=>criteria.date==='custom' && !!criteria.from && !!criteria.to && criteria.from>criteria.to)
 function resetFilters(){Object.assign(criteria,defaultFilters())}
+const input=ref(''), contextId=ref(''), messages=ref<Message[]>([]), aiBusy=ref(false), aiError=ref('')
 function focusComposer(){if(richDraft.value)richRef.value?.focus();else document.querySelector<HTMLTextAreaElement>('#chat-input')?.focus({preventScroll:true})}
-const expanded=ref(false),richDraft=ref<MinutesNode|null>(null),draftCategory=ref('task'),draftPriority=ref<TaskFields['priority']>('normal'),draftDate=ref(''),longEditingId=ref(''),longEditingStamp=ref(''),richRef=ref<{focus:()=>void}|null>(null)
+const composerFormats=ref(false)
+const expanded=ref(false),richDraft=ref<MinutesNode|null>(null),draftCategory=ref('task'),draftPriority=ref<TaskFields['priority']>('normal'),draftDate=ref(''),longEditingId=ref(''),longEditingStamp=ref(''),richRef=ref<{focus:()=>void;removeMention:(from:number,to:number)=>void;toggleFormat:()=>void}|null>(null)
 function selectRecord(task:Task){selectedId.value=task.id}
 function richUpdated(doc:MinutesNode,text:string){richDraft.value=doc;input.value=text}
 function toggleLong(){
  if(aiBusy.value||store.busy)return
- if(!richDraft.value){richDraft.value=textMinutes(input.value);contextId.value=''}
+ if(!richDraft.value){richDraft.value=titledMinutes(input.value)}
  expanded.value=!expanded.value;focusComposer()
 }
-function resetComposer(){richDraft.value=null;expanded.value=false;longEditingId.value='';longEditingStamp.value='';draftCategory.value='task';draftPriority.value='normal';draftDate.value='';input.value='';contextId.value='';messages.value=[];aiError.value='';try{if(localStorage.getItem(composerDraftKey.value)===lastComposerDraft)localStorage.removeItem(composerDraftKey.value);lastComposerDraft=null}catch{}}
+function toggleComposerFormat(){if(!richDraft.value)richDraft.value=titledMinutes(input.value);expanded.value=true;composerFormats.value=!composerFormats.value}
+function resetComposer(){composerFormats.value=false;mentionOpen.value=false;mentionRange=null;richDraft.value=null;expanded.value=false;longEditingId.value='';longEditingStamp.value='';draftCategory.value='task';draftPriority.value='normal';draftDate.value='';input.value='';contextId.value='';messages.value=[];aiError.value='';try{if(localStorage.getItem(composerDraftKey.value)===lastComposerDraft)localStorage.removeItem(composerDraftKey.value);lastComposerDraft=null}catch{}}
 let lastComposerDraft:string|null=null,draftStorageDisabled=false
 const composerDraftKey=computed(()=>`qingji.composer.draft.v1.${store.user?.id || (store.demo?'demo':'signed-out')}`)
 function restoreComposer(){
- try{lastComposerDraft=localStorage.getItem(composerDraftKey.value);const raw=JSON.parse(lastComposerDraft||'null');if(!raw)return;const doc=minutesSchema.safeParse(raw.document);if(!doc.success || typeof raw.category!=='string' || !['high','normal','low'].includes(raw.priority) || typeof raw.date!=='string'){draftStorageDisabled=true;notice.value='未发送内容格式异常，原缓存已保留。';return};richDraft.value=doc.data;input.value=minutesText(doc.data);draftCategory.value=raw.category;draftPriority.value=raw.priority;draftDate.value=raw.date;longEditingId.value=typeof raw.id==='string'?raw.id:'';longEditingStamp.value=typeof raw.stamp==='string'?raw.stamp:'';expanded.value=true;notice.value='已恢复未发送的内容'}catch{draftStorageDisabled=true;notice.value='本机未发送内容无法读取，原缓存已保留。'}
+ try{lastComposerDraft=localStorage.getItem(composerDraftKey.value);const raw=JSON.parse(lastComposerDraft||'null');if(!raw)return;const doc=minutesSchema.safeParse(raw.document);if(!doc.success || typeof raw.category!=='string' || !['high','normal','low'].includes(raw.priority) || typeof raw.date!=='string'){draftStorageDisabled=true;notice.value='未发送内容格式异常，原缓存已保留。';return};richDraft.value=doc.data;input.value=minutesText(doc.data);draftCategory.value=raw.category;draftPriority.value=raw.priority;draftDate.value=raw.date;longEditingId.value=typeof raw.id==='string'?raw.id:'';longEditingStamp.value=typeof raw.stamp==='string'?raw.stamp:'';contextId.value=typeof raw.contextId==='string'?raw.contextId:'';expanded.value=true;notice.value='已恢复未发送的内容'}catch{draftStorageDisabled=true;notice.value='本机未发送内容无法读取，原缓存已保留。'}
 }
-watch([richDraft,draftCategory,draftPriority,draftDate],()=>{if(!richDraft.value || draftStorageDisabled || (!store.demo&&!store.user))return;try{if(localStorage.getItem(composerDraftKey.value)!==lastComposerDraft){aiError.value='其他页面已更新未发送内容，本页停止覆盖暂存，请先发送当前内容。';return};const serialized=JSON.stringify({document:richDraft.value,category:draftCategory.value,priority:draftPriority.value,date:draftDate.value,id:longEditingId.value,stamp:longEditingStamp.value});localStorage.setItem(composerDraftKey.value,serialized);lastComposerDraft=serialized}catch{aiError.value='本机暂存失败，请及时保存内容。'}},{deep:true})
+watch([richDraft,draftCategory,draftPriority,draftDate,contextId],()=>{if(!richDraft.value || draftStorageDisabled || (!store.demo&&!store.user))return;try{if(localStorage.getItem(composerDraftKey.value)!==lastComposerDraft){aiError.value='其他页面已更新未发送内容，本页停止覆盖暂存，请先发送当前内容。';return};const serialized=JSON.stringify({document:richDraft.value,category:draftCategory.value,priority:draftPriority.value,date:draftDate.value,id:longEditingId.value,stamp:longEditingStamp.value,contextId:contextId.value});localStorage.setItem(composerDraftKey.value,serialized);lastComposerDraft=serialized}catch{aiError.value='本机暂存失败，请及时保存内容。'}},{deep:true})
 async function saveLong(){
  const version=sessionVersion
  try{
@@ -68,7 +73,6 @@ const selectedId=ref(''), settingsOpen=ref(false), widgetOpen=ref(false)
 const modal=ref<HTMLElement|null>(null)
 let previousFocus:HTMLElement|null=null
 const email=ref(''), password=ref(''), signup=ref(false), authBusy=ref(false), authNotice=ref(''), notice=ref('')
-const input=ref(''), contextId=ref(''), messages=ref<Message[]>([]), aiBusy=ref(false), aiError=ref('')
 const key=ref(''), testing=ref(false), connectionNotice=ref('')
 const modelPage=ref(false), rememberModel=ref(true)
 const modelDraft=reactive({endpoint:'',model:'',key:''})
@@ -124,7 +128,7 @@ watch(dialogOpen,async (open)=>{
   if(open){previousFocus=document.activeElement as HTMLElement;setTimeout(()=>modal.value?.querySelector<HTMLElement>('input,select,textarea,button')?.focus(),0)}
   else previousFocus?.focus()
 })
-function clearSessionState(){
+function clearSessionState(){composerFormats.value=false;mentionOpen.value=false;mentionRange=null;
   lastComposerDraft=null;draftStorageDisabled=false;sessionVersion++;controller?.abort();controller=undefined;aiBusy.value=false
   selectedId.value='';detailVisible.value=true;contextId.value='';messages.value=[];input.value='';richDraft.value=null;expanded.value=false;longEditingId.value='';longEditingStamp.value='';draftCategory.value='task';draftPriority.value='normal';draftDate.value='';input.value=''
   cancelDetailEdit();settingsOpen.value=false;typesOpen.value=false;modelPage.value=false;modelDraft.key='';widgetOpen.value=false;undo.value=null;clearTimeout(undoTimer);key.value='';aiError.value='';notice.value='';resetFilters()
@@ -147,7 +151,7 @@ function openEditor(task?:Task){
  if(!task){focusComposer();return}
  if(detailDraft.value && detailDraft.value.id!==task.id){notice.value='请先保存或取消另一条记录的编辑。';selectedId.value=detailDraft.value.id;return}
  detailError.value=''
- detailDraft.value ||= {id:task.id,stamp:task.updated_at,document:task.document || textMinutes([task.title,task.content].filter(Boolean).join('\n')),category:task.category,priority:task.priority,date:task.due_date}
+ detailDraft.value ||= {id:task.id,stamp:task.updated_at,document:task.document || titledMinutes([task.title,task.content].filter(Boolean).join('\n')),category:task.category,priority:task.priority,date:task.due_date}
 }
 function cancelDetailEdit(){detailDraft.value=null;detailError.value=''}
 async function saveDetail(){
@@ -171,18 +175,49 @@ async function remove(task:Task){try{undo.value=await store.save(task,task,new D
 async function restore(){if(!undo.value)return;try{await store.save(undo.value,undo.value);undo.value=null;notice.value='已撤销删除'}catch{}}
 function closeDetails(){selectedId.value='';detailVisible.value=false}
 watch(selectedId,id=>{if(id)detailVisible.value=true})
-function reference(task:Task){if(richDraft.value && input.value.trim()){aiError.value='请先保存当前内容，再引用任务。';focusComposer();return};contextId.value=task.id;if(window.innerWidth<=1050)selectedId.value='';focusComposer()}
+function reference(task:Task){contextId.value=task.id;if(window.innerWidth<=1050)selectedId.value='';focusComposer()}
+const mentionOpen=ref(false),mentionQuery=ref(''),mentionIndex=ref(0)
+let mentionRange:{from:number;to:number;rich:boolean}|null=null
+const mentionTasks=computed(()=>store.tasks.filter(t=>t.title.toLocaleLowerCase().includes(mentionQuery.value.toLocaleLowerCase())).slice(0,20))
+function openMentions(){mentionRange=null;mentionQuery.value='';mentionIndex.value=0;mentionOpen.value=true}
+function richMention(match:{query:string;from:number;to:number}|null){
+ if(!match){if(mentionRange?.rich){mentionRange=null;mentionOpen.value=false}return}
+ mentionRange={...match,rich:true};mentionQuery.value=match.query;mentionIndex.value=0;mentionOpen.value=true
+}
+function plainMention(event:Event){
+ const target=event.target as HTMLTextAreaElement
+ if(event instanceof KeyboardEvent && ['ArrowDown','ArrowUp','Enter','Escape'].includes(event.key))return
+ const end=target.selectionStart,match=target.value.slice(0,end).match(/(?:^|\s)@([^@\s]*)$/)
+ if(!match){if(mentionRange && !mentionRange.rich){mentionRange=null;mentionOpen.value=false}return}
+ mentionRange={from:end-match[1].length-1,to:end,rich:false};mentionQuery.value=match[1];mentionIndex.value=0;mentionOpen.value=true
+}
+async function chooseMention(task:Task){
+ const range=mentionRange;mentionRange=null;mentionOpen.value=false
+ if(range?.rich)richRef.value?.removeMention(range.from,range.to)
+ else if(range)input.value=input.value.slice(0,range.from)+input.value.slice(range.to)
+ contextId.value=task.id;await nextTick();focusComposer()
+}
+function mentionKeydown(event:KeyboardEvent){
+ if(!mentionOpen.value || event.isComposing)return
+ if(event.key==='Escape'){event.preventDefault();event.stopPropagation();mentionOpen.value=false;mentionRange=null;return}
+ if(['ArrowDown','ArrowUp','Enter'].includes(event.key)){
+ event.preventDefault();event.stopPropagation()
+ if(event.key==='Enter'){const task=mentionTasks.value[mentionIndex.value];if(task)void chooseMention(task)}
+ else {const count=mentionTasks.value.length;mentionIndex.value=count?(mentionIndex.value+(event.key==='ArrowDown'?1:-1)+count)%count:0}
+ }
+}
 async function send(){
   if(!input.value.trim()||aiBusy.value||store.busy)return
-  if(richDraft.value){await saveLong();return}
+  if(contextId.value && !context.value){aiError.value='引用的任务已不存在，请重新选择。';return}
+  if(richDraft.value && !context.value){await saveLong();return}
   if(!key.value||!model.value){openModel();aiError.value='请先配置模型和 API Key，输入内容已保留。';return}
   const text=input.value.trim(), original=context.value, owner=store.user?.id, wasDemo=store.demo, version=sessionVersion
   messages.value.push({role:'user',content:text});input.value='';aiBusy.value=true;aiError.value='';controller=new AbortController()
   try{
     const result=await collaborate({endpoint:endpoint.value,model:model.value},key.value,messages.value,original,controller.signal,categories.value)
     if(version!==sessionVersion||store.user?.id!==owner||store.demo!==wasDemo)throw Error('登录状态已改变，本次结果已取消。')
-    if(result.fields){if(result.action==='create')resetFilters();const t=await store.save(result.fields,result.action==='update'?original??undefined:undefined);selectedId.value=window.innerWidth<=1050?'':t.id;filter.value=t.completed?'completed':!t.due_date?'inbox':t.due_date>today.value?'planned':'today';messages.value=[];contextId.value='';notice.value='记录已保存，本轮对话已清空'}
-    else messages.value.push({role:'assistant',content:result.reply})
+    if(result.fields){if(result.action==='create')resetFilters();const t=await store.save(result.fields,result.action==='update'?original??undefined:undefined);selectedId.value=window.innerWidth<=1050?'':t.id;filter.value=t.completed?'completed':!t.due_date?'inbox':t.due_date>today.value?'planned':'today';resetComposer();notice.value=original?'引用的记录已更新':'记录已保存'}
+    else {messages.value.push({role:'assistant',content:result.reply});if(richDraft.value)richDraft.value=titledMinutes('')}
   }catch(e){if(version!==sessionVersion)return;input.value=text;messages.value.pop();aiError.value=e instanceof DOMException&&e.name==='TimeoutError'?'模型请求超时，原任务未改变。':e instanceof Error?e.message:'请求失败，原任务未改变。'}finally{if(version===sessionVersion){aiBusy.value=false;controller=undefined}}
 }
 async function checkConnection(){
@@ -191,7 +226,7 @@ async function checkConnection(){
 }
 function validateSettings(){settingsOpen.value=false;notice.value='设置已保存'}
 async function logout(){try{controller?.abort();await store.logout();clearSessionState()}catch(e){notice.value=(e as Error).message}}
-function closeDialog(){if(store.busy)return;cancelDetailEdit();settingsOpen.value=false;typesOpen.value=false;modelPage.value=false;modelDraft.key='';widgetOpen.value=false}
+function closeDialog(){if(store.busy)return;settingsOpen.value=false;typesOpen.value=false;modelPage.value=false;modelDraft.key='';widgetOpen.value=false}
 function shortcuts(e:KeyboardEvent){
   if(e.key==='Escape')closeDialog()
   if(dialogOpen.value && e.key==='Tab'){
@@ -208,6 +243,7 @@ onUnmounted(()=>{controller?.abort();clearInterval(refreshTimer);clearTimeout(un
 </script>
 
 <template>
+ <a-config-provider :locale="zhCN">
   <div v-if="store.loading" class="loading" role="status">✳ 正在打开轻记…</div>
   <main v-else-if="!store.user && !store.demo" class="welcome">
     <section class="welcome-story"><a href="#" class="brand">✳ <em>轻记</em><span>QINGJI</span></a><div><p class="eyebrow">LESS FRICTION. MORE FOCUS.</p><h1>把事情记下，<br>把轻松留下。</h1><p>从一个想法到下一步行动。<br>让 AI 帮你理清安排，让每一天更轻。</p><div class="welcome-note"><span>✓</span> 自然语言记录 <span>✓</span> 多设备同步 <span>✓</span> 自带 AI</div></div><small>记录更快，工作更轻。</small></section>
@@ -218,7 +254,7 @@ onUnmounted(()=>{controller?.abort();clearInterval(refreshTimer);clearTimeout(un
     </div></section>
   </main>
   <div v-else class="app-shell" :class="{'detail-open': selected,'details-hidden':!detailVisible,'long-expanded':expanded}" :inert="dialogOpen || undefined">
-    <aside class="sidebar"><a class="brand" href="#" @click.prevent="filter='today'"><span class="brand-icon"><IconSun /></span><em>轻记</em><span>QINGJI</span></a><p class="sidebar-caption">你的日常，轻一点</p><nav aria-label="任务视图"><a-button html-type="submit" v-for="v in views" :key="v.id" :class="{active:filter===v.id}" :aria-current="filter===v.id?'page':undefined" @click="filter=v.id"><span class="nav-icon"><component :is="viewIcons[v.id]" :size="16" :stroke-width="1.8" aria-hidden="true"/></span>{{ v.name }}<span class="count">{{ store.tasks.filter(t=>matches(t,v.id,today)).length }}</span></a-button></nav><div class="type-navigation"><div class="type-section-heading"><p class="sidebar-section-title">记录类型</p><a-button class="type-manage-icon" aria-label="管理任务类型" title="新增或编辑任务类型" @click="openTypes"><IconPlus :size="15"/></a-button></div><a-button html-type="submit" :class="{active:criteria.category==='all'}" @click="criteria.category='all'"><IconApps class="type-icon" :size="16" :stroke-width="1.8" aria-hidden="true"/>全部类型</a-button><a-button html-type="submit" v-for="(name,id) in categories" :key="id" :class="{active:criteria.category===id}" @click="criteria.category=id"><IconFile class="type-icon" :size="16" :stroke-width="1.8" aria-hidden="true"/>{{ name }}</a-button></div><div class="sidebar-bottom"><a-button html-type="submit" class="widget-launch" @click="widgetOpen=true"><IconApps :size="16" :stroke-width="1.8"/><span>小组件预览</span><IconLaunch class="widget-arrow" :size="14"/></a-button><div class="sync-note"><span class="status-dot" :class="{demo:store.demo}"></span>{{ store.demo?'演示模式 · 仅本机':store.error?'同步遇到问题':'云端空间' }}<a-button html-type="submit" v-if="!store.demo" class="text-button" @click="store.refresh()" aria-label="刷新任务"><IconRefresh :size="14"/></a-button></div><small v-if="store.synced && !store.demo">上次同步 {{ store.synced }}</small></div></aside>
+    <aside class="sidebar"><a class="brand" href="#" @click.prevent="filter='today'"><span class="brand-icon"><IconSun /></span><em>轻记</em><span>QINGJI</span></a><p class="sidebar-caption">你的日常，轻一点</p><nav aria-label="任务视图"><a-button html-type="submit" v-for="v in views" :key="v.id" :class="{active:filter===v.id}" :aria-current="filter===v.id?'page':undefined" @click="filter=v.id"><span class="nav-icon"><component :is="viewIcons[v.id]" :size="16" :stroke-width="1.8" aria-hidden="true"/></span>{{ v.name }}<span class="count">{{ store.tasks.filter(t=>matches(t,v.id,today)).length }}</span></a-button></nav><div class="sidebar-bottom"><a-button html-type="submit" class="widget-launch" @click="widgetOpen=true"><IconApps :size="16" :stroke-width="1.8"/><span>小组件预览</span><IconLaunch class="widget-arrow" :size="14"/></a-button><div class="sync-note"><span class="status-dot" :class="{demo:store.demo}"></span>{{ store.demo?'演示模式 · 仅本机':store.error?'同步遇到问题':'云端空间' }}<a-button html-type="submit" v-if="!store.demo" class="text-button" @click="store.refresh()" aria-label="刷新任务"><IconRefresh :size="14"/></a-button></div><small v-if="store.synced && !store.demo">上次同步 {{ store.synced }}</small></div></aside>
     <div class="workspace"><header class="topbar"><span class="breadcrumb">我的空间 <span>/</span> {{ view.name }}</span><div class="top-actions"><span class="account">{{ store.demo?'演示体验':store.user?.email }}</span><a-button html-type="submit" class="icon-button mobile-widget" aria-label="小组件预览" @click="widgetOpen=true"><IconApps :size="16"/></a-button><a-button html-type="submit" class="icon-button" aria-label="设置" @click="settingsOpen=true"><IconSettings /></a-button><a-button html-type="submit" class="text-button" @click="logout">{{ store.demo?'退出演示':'退出登录' }}</a-button></div></header>
       <nav class="mobile-nav" aria-label="移动端任务视图"><a-button html-type="submit" v-for="v in views" :key="v.id" :class="{active:filter===v.id}" @click="filter=v.id">{{ v.name }}</a-button></nav>
       <div v-if="store.demo" class="demo-banner">你正在体验演示空间，记录仅保存在当前浏览器。<a-button html-type="submit" class="text-button" @click="logout">{{ configured?'前往登录':'连接云端后即可同步' }} ↗</a-button></div>
@@ -250,30 +286,33 @@ onUnmounted(()=>{controller?.abort();clearInterval(refreshTimer);clearTimeout(un
               <td><span class="category" :class="t.category">{{ categories[t.category] || '未命名类型' }}</span></td>
               <td><span class="priority-label" :class="t.priority">{{ {high:'重要 · 高',normal:'普通',low:'较低'}[t.priority] }}</span></td>
               <td class="task-schedule" :class="{overdue:!!t.due_date && t.due_date<today && !t.completed}">{{ t.due_date || '未安排' }} {{ t.due_time }}</td>
-              <td><a-button html-type="submit" class="row-reference" :disabled="aiBusy" :aria-label="'引用：'+t.title" @click.stop="reference(t)">✦</a-button></td>
+              <td><a-button html-type="submit" class="row-reference" :disabled="aiBusy" :aria-label="'引用：'+t.title" @click.stop="reference(t)" title="引用任务"><IconAt :size="16"/></a-button></td>
             </tr></tbody></table></div>
         </section>
 <footer class="page-footer"><span>一步一步，也是在向前。</span><span>{{ done }} 条已完成 · {{ store.tasks.length }} 条记录</span></footer>
-      </div><aside v-if="selected" class="detail-panel" aria-label="记录详情"><div class="detail-top"><span>记录详情</span><a-button html-type="submit" class="icon-button" @click="closeDetails" aria-label="关闭详情">×</a-button></div><div class="detail-category-row"><span class="category" :title="categories[selected.category] || '未命名类型'">{{ categories[selected.category] || '未命名类型' }}</span><div v-if="detailDraft?.id!==selected.id" class="detail-actions" role="group" aria-label="记录操作">
+      </div><aside v-if="selected" class="detail-panel" aria-label="记录详情"><div class="detail-top"><span>记录详情</span><a-button html-type="submit" class="icon-button" @click="closeDetails" aria-label="关闭详情"><IconClose :size="16"/></a-button></div><div v-if="detailDraft?.id!==selected.id" class="detail-category-row"><span class="category" :title="categories[selected.category] || '未命名类型'">{{ categories[selected.category] || '未命名类型' }}</span><div v-if="detailDraft?.id!==selected.id" class="detail-actions" role="group" aria-label="记录操作">
  <a-tooltip content="与 AI 协作"><a-button html-type="button" type="text" class="detail-action" :disabled="aiBusy" aria-label="与 AI 协作" @click="reference(selected)"><IconMessage :size="18" :stroke-width="1.8"/></a-button></a-tooltip>
  <a-tooltip content="编辑记录"><a-button html-type="button" type="text" class="detail-action" aria-label="编辑记录" @click="openEditor(selected)"><IconEdit :size="18" :stroke-width="1.8"/></a-button></a-tooltip>
  <a-tooltip :content="selected.completed?'恢复记录':'标记完成'"><a-button html-type="button" type="text" class="detail-action" :disabled="store.busy" :aria-label="selected.completed?'恢复记录':'标记完成'" @click="toggle(selected)"><IconUndo v-if="selected.completed" :size="18" :stroke-width="1.8"/><IconCheck v-else :size="18" :stroke-width="1.8"/></a-button></a-tooltip>
  <a-tooltip content="延后到明天"><a-button html-type="button" type="text" class="detail-action" :disabled="store.busy" aria-label="延后到明天" @click="postpone(selected)"><IconClockCircle :size="18" :stroke-width="1.8"/></a-button></a-tooltip>
  <a-tooltip content="删除记录"><a-button html-type="button" type="text" class="detail-action danger" :disabled="store.busy" aria-label="删除记录" @click="remove(selected)"><IconDelete :size="18" :stroke-width="1.8"/></a-button></a-tooltip>
 </div></div><form v-if="detailDraft?.id===selected.id" class="detail-editor" aria-label="编辑记录" @submit.prevent="saveDetail">
- <div class="detail-edit-options"><label>类型<select v-model="detailDraft.category" :disabled="store.busy" aria-label="编辑类型"><option v-for="(name,id) in categories" :key="id" :value="id">{{ name }}</option></select></label><label>优先级<select v-model="detailDraft.priority" :disabled="store.busy" aria-label="编辑优先级"><option value="normal">普通</option><option value="high">重要</option><option value="low">较低</option></select></label><label>日期<input v-model="detailDraft.date" type="date" :disabled="store.busy" aria-label="编辑日期"></label></div>
+ <RecordMetadata v-model:category="detailDraft.category" :priority="detailDraft.priority" @update:priority="detailDraft.priority=$event as TaskFields['priority']" v-model:date="detailDraft.date" :categories="categories" :disabled="store.busy" prefix="编辑"/>
  <RichInput :document="detailDraft.document" expanded :disabled="store.busy" @update="doc=>{if(detailDraft)detailDraft.document=doc}" @send="saveDetail"/>
  <p v-if="detailError" role="alert" class="error">{{ detailError }}</p>
  <div class="detail-edit-footer"><a-button html-type="button" :disabled="store.busy" @click="cancelDetailEdit">取消</a-button><a-button html-type="submit" type="primary" :disabled="store.busy">{{ store.busy?'保存中…':'保存修改' }}</a-button></div>
- </form><template v-else><h2 v-if="!selected.document">{{ selected.title }}</h2><RichInput v-if="selected.document" :document="selected.document" readonly/><p v-else class="detail-content">{{ selected.content }}</p><dl><dt>安排</dt><dd>{{ selected.due_date || '尚未安排' }} {{ selected.due_time }}</dd><dt>优先级</dt><dd>{{ {high:'重要',normal:'普通',low:'较低'}[selected.priority] }}</dd><dt>提醒设置</dt><dd>{{ selected.reminder?'已标记提醒':'未设置' }}（暂不触发通知）</dd></dl><section v-if="selected.summary"><h3>✦ 整理摘要</h3><p>{{ selected.summary }}</p></section><ol v-if="selected.action_items.length"><li v-for="(item,i) in selected.action_items" :key="i">{{ item }}</li></ol></template></aside><aside v-else-if="detailVisible" class="detail-panel detail-placeholder" aria-label="记录详情"><div class="detail-top"><span>记录详情</span><a-button class="icon-button" @click="closeDetails" aria-label="关闭详情">×</a-button></div><div><span class="detail-placeholder-icon"><IconCheck /></span><h2>选择一条任务</h2><p>点击左侧任务列表，随时查看安排、内容和下一步行动。</p></div></aside></div>
+ </form><template v-else><h2 v-if="!selected.document">{{ selected.title }}</h2><RichInput v-if="selected.document" :document="selected.document" readonly/><p v-else class="detail-content">{{ selected.content }}</p><dl><dt>安排</dt><dd>{{ selected.due_date || '尚未安排' }} {{ selected.due_time }}</dd><dt>优先级</dt><dd>{{ {high:'重要',normal:'普通',low:'较低'}[selected.priority] }}</dd><dt>提醒设置</dt><dd>{{ selected.reminder?'已标记提醒':'未设置' }}（暂不触发通知）</dd></dl><section v-if="selected.summary"><h3>✦ 整理摘要</h3><p>{{ selected.summary }}</p></section><ol v-if="selected.action_items.length"><li v-for="(item,i) in selected.action_items" :key="i">{{ item }}</li></ol></template></aside><aside v-else-if="detailVisible" class="detail-panel detail-placeholder" aria-label="记录详情"><div class="detail-top"><span>记录详情</span><a-button class="icon-button" @click="closeDetails" aria-label="关闭详情"><IconClose :size="16"/></a-button></div><div><span class="detail-placeholder-icon"><IconCheck /></span><h2>选择一条任务</h2><p>点击左侧任务列表，随时查看安排、内容和下一步行动。</p></div></aside></div>
       </div>
     </div>
-    <section class="copilot compact-composer" :class="{'composer-expanded':expanded}" aria-label="AI 任务对话">
+    <section @keydown.capture="mentionKeydown" class="copilot compact-composer" :class="{'composer-expanded':expanded}" aria-label="AI 任务对话">
       <div v-if="messages.length" class="messages" aria-live="polite"><div v-for="(m,i) in messages" :key="i" :class="m.role"><span>{{ m.role==='user'?'你':'轻记' }}</span><p>{{ m.content }}</p></div></div>
       <div v-if="context" class="context-tag"><span>引用：{{ context.title }}</span><a-button html-type="button" :disabled="aiBusy" @click="contextId=''" aria-label="取消引用任务">×</a-button></div>
-      <div v-if="expanded" class="composer-options"><label>类型<select v-model="draftCategory" :disabled="store.busy" aria-label="记录类型"><option v-for="(name,id) in categories" :key="id" :value="id">{{name}}</option></select></label><label>优先级<select v-model="draftPriority" :disabled="store.busy" aria-label="记录优先级"><option value="normal">普通</option><option value="high">重要</option><option value="low">较低</option></select></label><label>日期<input v-model="draftDate" :disabled="store.busy" type="date" aria-label="记录日期"></label><span v-if="longEditingId">编辑记录</span></div>
-      <form @submit.prevent="send"><RichInput v-if="richDraft" ref="richRef" :document="richDraft" :expanded="expanded" :disabled="store.busy" @update="richUpdated" @send="send"/><label class="sr-only" for="chat-input">给 AI 发送消息</label><textarea v-if="!richDraft" id="chat-input" v-model="input" :disabled="aiBusy" :placeholder="context?'告诉 AI，你想怎样调整这条任务…':'记录任务，或让 AI 帮你理清下一步…'" maxlength="12000" @keydown.meta.enter.prevent="send" @keydown.ctrl.enter.prevent="send"></textarea>
-        <div class="composer-footer"><a-button html-type="button" class="expand-composer" :aria-label="expanded?'收起长文本':'展开长文本'" :title="expanded?'收起':'长文本'" @click="toggleLong"><IconShrink v-if="expanded"/><IconExpand v-else/></a-button><div class="composer-send"><a-button html-type="button" class="composer-model" :title="model || '配置你的模型'" @click="openModel"><IconThunderbolt :size="14"/><span>{{ model || '配置模型' }}</span></a-button><span v-if="aiBusy" class="composer-status" role="status">正在处理…</span><a-tooltip content="发送 · ⌘ / Ctrl + Enter"><a-button html-type="submit" type="primary" class="primary send-icon" :disabled="aiBusy || store.busy || !input.trim()" :aria-label="aiBusy?'正在发送':'发送'" :title="richDraft?'保存记录 · ⌘ / Ctrl + Enter':'⌘ / Ctrl + Enter 发送'"><IconArrowUp :size="19"/></a-button></a-tooltip></div></div>
+      <RecordMetadata v-if="expanded && !context" v-model:category="draftCategory" :priority="draftPriority" @update:priority="draftPriority=$event as TaskFields['priority']" v-model:date="draftDate" :categories="categories" :disabled="store.busy || aiBusy" prefix="记录"/>
+      <form @submit.prevent="send"><RichInput v-if="richDraft" external-tools :tools-open="composerFormats" mentions @mention="richMention" ref="richRef" :document="richDraft" :expanded="expanded" :disabled="store.busy || aiBusy" @update="richUpdated" @send="send"/><label class="sr-only" for="chat-input">给 AI 发送消息</label><textarea v-if="!richDraft" id="chat-input" v-model="input" @input="plainMention" @keyup="plainMention" @click="plainMention" :disabled="aiBusy" :placeholder="context?'告诉 AI，你想怎样调整这条任务…':'记录任务，或让 AI 帮你理清下一步…'" maxlength="12000" @keydown.meta.enter.prevent="send" @keydown.ctrl.enter.prevent="send"></textarea>
+        <div class="composer-footer"><a-button html-type="button" class="expand-composer" aria-label="文本格式开关" :aria-expanded="expanded && composerFormats" title="文本格式" :disabled="aiBusy || store.busy" @click="toggleComposerFormat"><IconFontColors :size="18"/></a-button><a-button html-type="button" class="expand-composer" :aria-label="expanded?'收起长文本':'展开长文本'" :title="expanded?'收起':'长文本'" @click="toggleLong"><IconShrink v-if="expanded"/><IconExpand v-else/></a-button><a-popover position="top" trigger="click" :popup-visible="mentionOpen" @popup-visible-change="mentionOpen=$event" :content-style="{padding:'10px',width:'min(320px, calc(100vw - 36px))'}">
+ <a-button class="expand-composer" html-type="button" aria-label="引用任务" title="@ 引用任务" :disabled="aiBusy" @click="openMentions"><IconAt :size="18"/></a-button>
+ <template #content><div class="mention-picker" @keydown="mentionKeydown"><a-input v-model="mentionQuery" size="small" placeholder="搜索已有任务" :input-attrs="{'aria-label':'搜索引用任务'}" allow-clear @input="mentionIndex=0"><template #prefix><IconSearch/></template></a-input><div class="mention-results" role="listbox" aria-label="引用已有任务"><button v-for="(task,index) in mentionTasks" :key="task.id" html-type="button" type="button" role="option" :aria-selected="mentionIndex===index" @mousedown.prevent @click="chooseMention(task)"><IconFile :size="16"/><span>{{ task.title }}</span><small>{{ categories[task.category] }}</small></button><p v-if="!mentionTasks.length">没有匹配的任务</p></div></div></template>
+ </a-popover><div class="composer-send"><a-button html-type="button" class="composer-model" :title="model || '配置你的模型'" @click="openModel"><IconThunderbolt :size="14"/><span>{{ model || '配置模型' }}</span></a-button><span v-if="aiBusy" class="composer-status" role="status">正在处理…</span><a-tooltip content="发送 · ⌘ / Ctrl + Enter"><a-button html-type="submit" type="primary" class="primary send-icon" :disabled="aiBusy || store.busy || !input.trim()" :aria-label="aiBusy?'正在发送':'发送'" :title="context?'修改引用任务 · ⌘ / Ctrl + Enter':richDraft?'保存记录 · ⌘ / Ctrl + Enter':'⌘ / Ctrl + Enter 发送'"><IconArrowUp :size="19"/></a-button></a-tooltip></div></div>
       </form><p v-if="aiError" class="error" role="alert">{{ aiError }}</p>
     </section>
   </div>
@@ -302,4 +341,5 @@ onUnmounted(()=>{controller?.abort();clearInterval(refreshTimer);clearTimeout(un
     <div v-else><p class="eyebrow">A LITTLE SPACE FOR FOCUS</p><h2>小组件预览</h2><p class="muted">站内交互预览，不是系统桌面组件。</p><div class="widget"><div class="widget-heading"><em>轻记</em><span>{{ today }}</span></div><h3>今天，做一点就好。</h3><div v-for="t in active" :key="t.id" class="widget-record"><a-button html-type="submit" class="check" :disabled="store.busy" :aria-label="'小组件完成：'+t.title" @click.stop="toggle(t)"></a-button><a-button html-type="submit" @click="selectedId=t.id;widgetOpen=false">{{ privacy?'私密记录':t.title }}</a-button></div><p v-if="!active.length">都完成了，好好享受这份轻松。</p></div></div>
   </section></div>
   <div v-if="notice || undo" class="toast" role="status"><span>{{ undo?'记录已删除':notice }}</span><a-button html-type="submit" v-if="undo" :disabled="store.busy" @click="restore">撤销</a-button><a-button html-type="submit" v-else @click="notice=''" aria-label="关闭提示">×</a-button></div>
+ </a-config-provider>
 </template>

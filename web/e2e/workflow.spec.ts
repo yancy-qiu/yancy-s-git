@@ -1,3 +1,4 @@
+import {choose,manageTypes} from './ui'
 import { test, expect, type Page } from '@playwright/test'
 async function demo(page:Page){await page.goto('/');await page.getByRole('button',{name:'先体验演示版'}).click()}
 async function create(page:Page,title:string){await page.getByRole('button',{name:'展开长文本'}).click();await page.getByRole('textbox',{name:'长文本内容',exact:true}).fill(title);await page.getByRole('button',{name:'发送',exact:true}).click();await expect(page.getByRole('heading',{name:title,exact:true}).first()).toBeVisible()}
@@ -165,10 +166,10 @@ test('three column task workbench, combined filters and bottom composer',async({
  await page.getByLabel('结束日期',{exact:true}).fill('2026-11-11')
  await expect(page.getByRole('alert')).toHaveText('结束日期不能早于开始日期。')
  await page.getByRole('button',{name:'清除全部筛选',exact:true}).click()
- await page.getByRole('button',{name:'会议',exact:true}).click()
+ await page.getByRole('button',{name:'筛选类型',exact:true}).click();await page.getByRole('group',{name:'类型筛选',exact:true}).getByRole('button',{name:'会议',exact:true}).click()
  await expect(page.locator('.record-card')).toHaveCount(1)
  await expect(page.getByRole('button',{name:'查看：普通会议',exact:true})).toBeVisible()
- await page.getByRole('button',{name:'全部类型',exact:true}).click()
+ await page.getByRole('button',{name:'筛选类型',exact:true}).click();await page.getByRole('group',{name:'类型筛选',exact:true}).getByRole('button',{name:'全部类型',exact:true}).click()
  await page.getByRole('button',{name:'筛选排序',exact:true}).click()
  await page.getByRole('group',{name:'任务排序',exact:true}).getByRole('button',{name:'优先级优先',exact:true}).click()
  await expect(page.locator('.record-card').first()).toContainText('重要评审')
@@ -210,7 +211,7 @@ test('empty views hide the table and navigation uses compact consistent icons',a
  const nav=page.getByRole('navigation',{name:'任务视图',exact:true})
  for(const button of await nav.getByRole('button').all())expect((await button.boundingBox())!.height).toBeLessThanOrEqual(34)
  expect(await nav.locator('.nav-icon svg').count()).toBe(6)
- expect((await page.getByRole('button',{name:'管理任务类型',exact:true}).locator('svg').boundingBox())!.width).toBeGreaterThanOrEqual(14)
+ await expect(page.locator('.type-navigation')).toHaveCount(0)
  await nav.getByRole('button',{name:/计划/}).click()
  await expect(page.getByRole('heading',{name:'给这一天，留一点空白',exact:true})).toBeVisible()
  await expect(page.getByRole('table')).toHaveCount(0)
@@ -257,7 +258,7 @@ test('detail editing saves the same record without touching the composer',async(
  await detail.getByRole('button',{name:'保存修改',exact:true}).click()
  await expect(detail.getByRole('alert')).toHaveText('请填写记录内容。')
  await editor.fill('在卡片内修改\n保留重要内容')
- await detail.getByLabel('编辑优先级',{exact:true}).selectOption('high')
+ await choose(page,'编辑优先级','重要')
  await page.evaluate(()=>{const original=Storage.prototype.setItem;Storage.prototype.setItem=function(key,value){if(key==='qingji.vue.demo.v1'){Storage.prototype.setItem=original;throw new Error('模拟保存失败')}return original.call(this,key,value)}})
  await detail.getByRole('button',{name:'保存修改',exact:true}).click()
  await expect(detail.getByRole('alert')).toBeVisible()

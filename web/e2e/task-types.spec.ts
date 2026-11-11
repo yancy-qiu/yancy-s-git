@@ -1,7 +1,8 @@
+import {choose,manageTypes} from './ui'
 import {test,expect} from '@playwright/test'
 test('manage types, assign tasks, rename without losing assignments and preserve on reload',async({page})=>{
  await page.goto('/');await page.getByRole('button',{name:'先体验演示版'}).click()
- await page.getByRole('button',{name:'管理任务类型',exact:true}).click()
+ await manageTypes(page)
  const manager=page.getByRole('dialog',{name:'管理任务类型',exact:true})
  await page.getByLabel('类型名称',{exact:true}).fill('学习')
  await page.getByRole('button',{name:'添加类型',exact:true}).click()
@@ -12,10 +13,10 @@ test('manage types, assign tasks, rename without losing assignments and preserve
  await page.getByRole('button',{name:'关闭弹窗',exact:true}).click()
  await page.getByRole('button',{name:'展开长文本',exact:true}).click()
  await page.getByRole('textbox',{name:'长文本内容',exact:true}).fill('阅读一本书')
- await page.getByRole('combobox',{name:'记录类型',exact:true}).selectOption({label:'学习'})
+ await choose(page,'记录类型','学习')
  await page.getByRole('button',{name:'发送',exact:true}).click()
  await expect(page.locator('.record-card')).toContainText('学习')
- await page.getByRole('button',{name:'管理任务类型',exact:true}).click()
+ await manageTypes(page)
  await page.getByRole('button',{name:'删除类型：学习',exact:true}).click()
  await expect(manager.getByRole('status')).toContainText('仍有任务')
  await page.getByRole('button',{name:'编辑类型：学习',exact:true}).click()

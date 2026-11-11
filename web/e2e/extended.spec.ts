@@ -1,3 +1,4 @@
+import {choose,manageTypes} from './ui'
 import { test, expect, type Page, type BrowserContext } from '@playwright/test'
 async function demo(page:Page){await page.goto('/');await page.getByRole('button',{name:'先体验演示版'}).click()}
 async function modelSettings(page:Page){
@@ -136,7 +137,7 @@ test('two browser sessions sync via refresh and recover safely after save/read f
  await second.getByRole('button',{name:'查看：跨会话同步任务'}).click()
  await second.getByRole('button',{name:'编辑记录',exact:true}).click()
  await second.getByRole('textbox',{name:'长文本内容',exact:true}).fill('另一设备已更新')
- await second.getByRole('button',{name:'发送',exact:true}).click()
+ await second.getByRole('button',{name:'保存修改',exact:true}).click()
  await expect(second.getByRole('dialog')).toHaveCount(0)
  state.readFailure=true;await page.getByRole('button',{name:'刷新任务',exact:true}).click()
  await expect(page.getByRole('alert')).toContainText('云端读取失败',{timeout:15000})
@@ -187,20 +188,20 @@ test('remembered model configuration is isolated by account and restored after l
 
 test('cloud custom type is restored in a second browser page',async({context,page})=>{
  await cloud(context);await login(page)
- await page.getByRole('button',{name:'管理任务类型',exact:true}).click()
+ await manageTypes(page)
  await page.getByLabel('类型名称',{exact:true}).fill('客户跟进')
  await page.getByRole('button',{name:'添加类型',exact:true}).click()
  await expect(page.getByRole('button',{name:'编辑类型：客户跟进',exact:true})).toBeVisible()
  await page.getByRole('button',{name:'关闭弹窗',exact:true}).click()
  const second=await context.newPage();await second.goto('/')
- await expect(second.locator('.type-navigation').getByRole('button',{name:'客户跟进',exact:true})).toBeVisible()
- await second.getByRole('button',{name:'管理任务类型',exact:true}).click()
+ await second.getByRole('button',{name:'筛选类型',exact:true}).click();await expect(second.getByRole('group',{name:'类型筛选'}).getByRole('button',{name:'客户跟进',exact:true})).toBeVisible();await second.getByRole('button',{name:'筛选类型',exact:true}).click()
+ await manageTypes(second)
  await second.getByRole('button',{name:'编辑类型：客户跟进',exact:true}).click()
  await second.getByLabel('类型名称',{exact:true}).fill('客户沟通')
  await second.getByRole('button',{name:'保存名称',exact:true}).click()
  await expect(second.getByRole('button',{name:'编辑类型：客户沟通',exact:true})).toBeVisible()
  await page.reload()
- await expect(page.locator('.type-navigation').getByRole('button',{name:'客户沟通',exact:true})).toBeVisible()
+ await page.getByRole('button',{name:'筛选类型',exact:true}).click();await expect(page.getByRole('group',{name:'类型筛选'}).getByRole('button',{name:'客户沟通',exact:true})).toBeVisible()
 })
 test('cloud long text is restored on a second page without a dialog',async({context,page})=>{
  await cloud(context);await login(page);await page.getByRole('button',{name:'展开长文本',exact:true}).click()
