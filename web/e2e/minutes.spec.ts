@@ -43,6 +43,11 @@ test('minimal format toolbar highlights text, persists it and removes highlighti
  await demo(page);await expand(page)
  const toolbar=page.getByRole('toolbar',{name:'文本格式',exact:true}), body=page.getByRole('textbox',{name:'长文本内容',exact:true})
  await expect(toolbar.getByRole('button')).toHaveCount(5)
+ const buttons=await toolbar.getByRole('button').all();const size=(await buttons[0].boundingBox())!
+ for(const button of buttons){const box=(await button.boundingBox())!;expect(box.width).toBe(size.width);expect(box.height).toBe(size.height)}
+ await expect(toolbar.getByRole('button',{name:'荧光笔高亮',exact:true}).locator('svg')).toHaveCount(0)
+ await expect(toolbar.locator('.highlight-swatch')).toBeVisible()
+ expect(await toolbar.locator('button>svg').count()).toBe(4)
  for(const name of ['1级标题','2级标题','3级标题','引用格式','斜体','下划线','撤销','重做'])await expect(toolbar.getByRole('button',{name,exact:true})).toHaveCount(0)
  await body.fill('这里是重点内容');await body.press('ControlOrMeta+a');await toolbar.getByRole('button',{name:'荧光笔高亮',exact:true}).click();await expect(body.locator('mark')).toHaveText('这里是重点内容')
  await page.getByRole('button',{name:'发送',exact:true}).click();await page.getByRole('button',{name:'查看：这里是重点内容',exact:true}).click();await expect(page.getByRole('article',{name:'记录正文'}).locator('mark')).toHaveText('这里是重点内容')

@@ -3,7 +3,7 @@ import {onBeforeUnmount,watch} from 'vue'
 import {EditorContent,useEditor} from '@tiptap/vue-3'
 import StarterKit from '@tiptap/starter-kit'
 import Highlight from '@tiptap/extension-highlight'
-import {IconHighlight} from '@arco-design/web-vue/es/icon'
+import {IconBold,IconOrderedList,IconUnorderedList,IconCheckSquare} from '@arco-design/web-vue/es/icon'
 import Underline from '@tiptap/extension-underline'
 import Link from '@tiptap/extension-link'
 import TaskList from '@tiptap/extension-task-list'
@@ -21,8 +21,8 @@ onBeforeUnmount(()=>editor.value?.destroy())
 <template>
  <div class="rich-input" :class="{'rich-expanded':expanded,'rich-readonly':readonly}">
   <div v-if="editor && expanded && !readonly" class="rich-tools" role="toolbar" aria-label="文本格式">
-   <a-button html-type="button" aria-label="加粗" :aria-pressed="editor.isActive('bold')" @click="editor.chain().focus().toggleBold().run()"><b>B</b></a-button><a-button html-type="button" aria-label="荧光笔高亮" title="选中文字后高亮，再点一次取消" :aria-pressed="editor.isActive('highlight')" @click="editor.chain().focus().toggleHighlight().run()"><IconHighlight class="highlight-tool-icon"/></a-button>
-   <a-button html-type="button" aria-label="编号列表" :aria-pressed="editor.isActive('orderedList')" @click="editor.chain().focus().toggleOrderedList().run()">1.</a-button><a-button html-type="button" aria-label="无序列表" :aria-pressed="editor.isActive('bulletList')" @click="editor.chain().focus().toggleBulletList().run()">•</a-button><a-button html-type="button" aria-label="勾选清单" :aria-pressed="editor.isActive('taskList')" @click="editor.chain().focus().toggleTaskList().run()">☑</a-button>
+   <a-button html-type="button" aria-label="加粗" :aria-pressed="editor.isActive('bold')" @click="editor.chain().focus().toggleBold().run()"><IconBold :size="16" :stroke-width="2" aria-hidden="true"/></a-button><a-button html-type="button" aria-label="荧光笔高亮" title="选中文字后高亮，再点一次取消" :aria-pressed="editor.isActive('highlight')" @click="editor.chain().focus().toggleHighlight().run()"><span class="highlight-swatch" aria-hidden="true"></span></a-button>
+   <a-button html-type="button" aria-label="编号列表" :aria-pressed="editor.isActive('orderedList')" @click="editor.chain().focus().toggleOrderedList().run()"><IconOrderedList :size="16" :stroke-width="2" aria-hidden="true"/></a-button><a-button html-type="button" aria-label="无序列表" :aria-pressed="editor.isActive('bulletList')" @click="editor.chain().focus().toggleBulletList().run()"><IconUnorderedList :size="16" :stroke-width="2" aria-hidden="true"/></a-button><a-button html-type="button" aria-label="勾选清单" :aria-pressed="editor.isActive('taskList')" @click="editor.chain().focus().toggleTaskList().run()"><IconCheckSquare :size="16" :stroke-width="2" aria-hidden="true"/></a-button>
   </div>
   <EditorContent :editor="editor"/>
  </div>
