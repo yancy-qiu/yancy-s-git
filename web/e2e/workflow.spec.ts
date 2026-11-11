@@ -218,3 +218,17 @@ test('empty views hide the table and navigation uses compact consistent icons',a
  await page.screenshot({path:'/tmp/qingji-compact-navigation.png',animations:'disabled'})
  await nav.getByRole('button',{name:/今天/}).click();await expect(page.getByRole('table')).toBeVisible()
 })
+test('detail actions remain a compact accessible icon row across screen sizes',async({page})=>{
+ await demo(page);await page.getByRole('button',{name:'查看：给今天留一点清晰',exact:true}).click()
+ const actions=page.getByRole('group',{name:'记录操作',exact:true})
+ await expect(actions.getByRole('button')).toHaveCount(5)
+ for(const width of [1440,905,390]){
+  await page.setViewportSize({width,height:921})
+  const boxes=await actions.getByRole('button').evaluateAll(items=>items.map(el=>{const r=el.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}}))
+  expect((await actions.boundingBox())!.height).toBeLessThanOrEqual(44)
+  for(const box of boxes){expect(box.height).toBe(32);expect(box.width).toBe(32);expect(box.y).toBe(boxes[0].y)}
+ }
+ await page.setViewportSize({width:905,height:921});await page.screenshot({path:'/tmp/qingji-compact-detail-actions.png',animations:'disabled'})
+ await actions.getByRole('button',{name:'编辑记录',exact:true}).click()
+ await expect(page.getByRole('textbox',{name:'长文本内容',exact:true})).toBeVisible()
+})
