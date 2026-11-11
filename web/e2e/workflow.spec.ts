@@ -1,12 +1,12 @@
 import { test, expect, type Page } from '@playwright/test'
 async function demo(page:Page){await page.goto('/');await page.getByRole('button',{name:'先体验演示版'}).click()}
-async function create(page:Page,title:string){await page.getByRole('button',{name:'＋ 新建记录'}).click();await page.getByRole('textbox',{name:'标题',exact:true}).fill(title);await page.getByRole('button',{name:'保存记录',exact:true}).click();await expect(page.getByRole('heading',{name:title,exact:true}).first()).toBeVisible()}
+async function create(page:Page,title:string){await page.getByRole('button',{name:'展开长文本'}).click();await page.getByRole('textbox',{name:'长文本内容',exact:true}).fill(title);await page.getByRole('button',{name:'发送',exact:true}).click();await expect(page.getByRole('heading',{name:title,exact:true}).first()).toBeVisible()}
 test('demo CRUD, filters, undo, persistence, theme and widget privacy',async({page})=>{
  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));await demo(page)
  await create(page,'准备产品评审')
  await page.getByRole('button',{name:'编辑记录',exact:true}).click()
- await page.getByRole('textbox',{name:'正文',exact:true}).fill('整理三个关键问题')
- await page.getByRole('button',{name:'保存记录',exact:true}).click()
+ await page.getByRole('textbox',{name:'长文本内容',exact:true}).fill('准备产品评审\n整理三个关键问题')
+ await page.getByRole('button',{name:'发送',exact:true}).click()
  await page.getByRole('button',{name:'标记完成',exact:true}).click()
  await page.getByRole('navigation',{name:'任务视图',exact:true}).getByRole('button',{name:/已完成/}).click()
  await expect(page.getByRole('heading',{name:'准备产品评审',exact:true}).first()).toBeVisible()
@@ -34,7 +34,7 @@ test('demo CRUD, filters, undo, persistence, theme and widget privacy',async({pa
 })
 test('mobile renders without overflow and supports creation',async({page})=>{
  await page.setViewportSize({width:390,height:844});await demo(page);await create(page,'移动端随手记')
- await page.getByRole('button',{name:'关闭详情'}).click()
+ if(await page.getByRole('button',{name:'关闭详情'}).isVisible())await page.getByRole('button',{name:'关闭详情'}).click()
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)
  await page.screenshot({path:'/tmp/qingji-mobile.png',fullPage:true})
  await page.getByRole('button',{name:'小组件预览',exact:true}).click()
@@ -139,7 +139,7 @@ test('three column task workbench, combined filters and bottom composer',async({
  await expect(page.locator('.copilot-title,.context-picker')).toHaveCount(0)
  expect(await page.getByLabel('给 AI 发送消息').evaluate(el=>getComputedStyle(el).resize)).toBe('none')
  expect(await page.locator('.quick-create').count()).toBe(0)
- await expect(page.locator('.filter-sort-label')).toHaveText('优先级优先')
+ await expect(page.locator('.filter-sort-label,.filter-toolbar-caption')).toHaveCount(0)
  expect((await page.locator('.record-card').first().boundingBox())!.height).toBeLessThanOrEqual(56)
  await page.getByRole('button',{name:'查看：重要评审',exact:true}).click()
  await expect(details.getByRole('heading',{name:'重要评审',exact:true})).toBeVisible()
@@ -204,4 +204,17 @@ test('compact rows keep the composer fixed while the last task remains reachable
  await page.setViewportSize({width:390,height:844})
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)
  await page.screenshot({path:'/tmp/qingji-floating-mobile.png',fullPage:false})
+})
+test('empty views hide the table and navigation uses compact consistent icons',async({page})=>{
+ await page.setViewportSize({width:1440,height:1000});await demo(page)
+ const nav=page.getByRole('navigation',{name:'任务视图',exact:true})
+ for(const button of await nav.getByRole('button').all())expect((await button.boundingBox())!.height).toBeLessThanOrEqual(34)
+ expect(await nav.locator('.nav-icon svg').count()).toBe(6)
+ expect((await page.getByRole('button',{name:'管理任务类型',exact:true}).locator('svg').boundingBox())!.width).toBeGreaterThanOrEqual(14)
+ await nav.getByRole('button',{name:/计划/}).click()
+ await expect(page.getByRole('heading',{name:'给这一天，留一点空白',exact:true})).toBeVisible()
+ await expect(page.getByRole('table')).toHaveCount(0)
+ await expect(page.locator('.filter-sort-label,.filter-toolbar-caption')).toHaveCount(0)
+ await page.screenshot({path:'/tmp/qingji-compact-navigation.png',animations:'disabled'})
+ await nav.getByRole('button',{name:/今天/}).click();await expect(page.getByRole('table')).toBeVisible()
 })

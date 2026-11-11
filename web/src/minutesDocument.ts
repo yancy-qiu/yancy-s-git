@@ -7,7 +7,7 @@ export function validMinutes(value:unknown):value is MinutesNode{
   if(!n || typeof n!=='object' || Array.isArray(n) || !nodes.has(n.type) || depth>20 || ++count>12000)return false
   if(n.type==='text' && typeof n.text!=='string')return false
   if(n.type==='heading' && ![1,2,3].includes(n.attrs?.level))return false
-  if(n.marks && (!Array.isArray(n.marks)||n.marks.some((m:any)=>!['bold','italic','underline','link'].includes(m.type) || m.type==='link' && !(typeof m.attrs?.href==='string' && /^(https?:\/\/|mailto:)/i.test(m.attrs.href)))))return false
+  if(n.marks && (!Array.isArray(n.marks)||n.marks.some((m:any)=>!['bold','italic','underline','link','highlight'].includes(m.type) || m.type==='link' && !(typeof m.attrs?.href==='string' && /^(https?:\/\/|mailto:)/i.test(m.attrs.href)))))return false
   return n.content===undefined || Array.isArray(n.content) && n.content.every((c:any)=>check(c,depth+1))
  }
  try{return check(value) && (value as MinutesNode).type==='doc' && new TextEncoder().encode(JSON.stringify(value)).length<=500000}catch{return false}
@@ -19,4 +19,3 @@ export function minutesText(doc:MinutesNode):string{
  const text=(n:MinutesNode):string=>n.type==='text'?n.text||'':n.type==='hardBreak'?'\n':(n.content||[]).map(text).join(['doc','bulletList','orderedList','taskList','listItem','taskItem','blockquote'].includes(n.type)?'\n':'')
  return text(doc)
 }
-export const minutesTemplate=():MinutesNode=>({type:'doc',content:['会议主题','时间与参会人','讨论要点','结论','行动项'].flatMap(t=>[{type:'heading',attrs:{level:2},content:[{type:'text',text:t}]},{type:'paragraph'}])})
