@@ -74,7 +74,7 @@ const modal=ref<HTMLElement|null>(null)
 let previousFocus:HTMLElement|null=null
 const email=ref(''), password=ref(''), signup=ref(false), authBusy=ref(false), authNotice=ref(''), notice=useAutoDismissNotice()
 const key=ref(''), testing=ref(false), connectionNotice=ref('')
-const modelPage=ref(false), rememberModel=ref(true)
+const modelPage=ref(false)
 const modelDraft=reactive({endpoint:'',model:'',key:''})
 const modelStorageKey=computed(()=>`qingji.vue.model.v1.${store.user?.id || (store.demo?'demo':'signed-out')}`)
 function readSettings(){try{const value=JSON.parse(localStorage.getItem('qingji.vue.preferences')||'{}');return value && typeof value==='object' && !Array.isArray(value)?value:{}}catch{return {}}}
@@ -90,7 +90,7 @@ let sessionVersion=0
 let undoTimer:ReturnType<typeof setTimeout>|undefined, refreshTimer:ReturnType<typeof setInterval>|undefined, controller:AbortController|undefined
 watch(theme,()=>{try{localStorage.setItem('qingji.vue.preferences',JSON.stringify({theme:theme.value}))}catch{notice.value='浏览器未允许保存设置。'};applyTheme()})
 function loadModel(){
-  rememberModel.value=true;key.value='';model.value='';endpoint.value='https://api.openai.com/v1/chat/completions'
+  key.value='';model.value='';endpoint.value='https://api.openai.com/v1/chat/completions'
   if(!store.user && !store.demo)return
   try{
     const saved=JSON.parse(localStorage.getItem(modelStorageKey.value)||'null')
@@ -104,20 +104,18 @@ function openModel(){
   connectionNotice.value='';settingsOpen.value=false;modelPage.value=true
   requestAnimationFrame(()=>modal.value?.querySelector<HTMLElement>('button')?.focus())
 }
-function saveModel(){
+function saveModel(showValidation=true){
+  if(modelDraft.endpoint===endpoint.value && modelDraft.model===model.value && modelDraft.key===key.value)return true
+  let next
+  try{next={endpoint:endpointURL(modelDraft.endpoint.trim()),model:modelDraft.model.trim(),key:modelDraft.key.trim()}}
+  catch(e){if(showValidation)connectionNotice.value=e instanceof Error?e.message:'请输入有效的 HTTPS 接口地址。';return false}
   try{
-    const next={endpoint:endpointURL(modelDraft.endpoint.trim()),model:modelDraft.model.trim(),key:modelDraft.key.trim()}
-    if(!next.model || !next.key)throw Error('请填写模型名称和 API Key。')
-    if(rememberModel.value)localStorage.setItem(modelStorageKey.value,JSON.stringify(next))
-    else localStorage.removeItem(modelStorageKey.value)
+    localStorage.setItem(modelStorageKey.value,JSON.stringify(next))
     endpoint.value=next.endpoint;model.value=next.model;key.value=next.key
     sessionStorage.removeItem('qingji.vue.ai-key')
-    modelDraft.key='';modelPage.value=false;notice.value=rememberModel.value?'模型配置已记住，下次打开可继续使用':'模型配置已保存，仅本次打开使用'
-  }catch(e){connectionNotice.value=e instanceof Error?e.message:'配置保存失败，请检查浏览器存储权限。'}
-}
-function clearModelKey(){
-  try{localStorage.removeItem(modelStorageKey.value);sessionStorage.removeItem('qingji.vue.ai-key');key.value='';modelDraft.key='';connectionNotice.value='已清除本机保存的模型配置。'}
-  catch{connectionNotice.value='清除失败，请检查浏览器存储权限。'}
+    connectionNotice.value=''
+    return true
+  }catch{connectionNotice.value='配置保存失败，请检查浏览器存储权限。';return false}
 }
 
 const media=window.matchMedia('(prefers-color-scheme: dark)')
@@ -225,7 +223,7 @@ async function checkConnection(){
 }
 function validateSettings(){settingsOpen.value=false;notice.value='设置已保存'}
 async function logout(){try{controller?.abort();await store.logout();clearSessionState()}catch(e){notice.value=(e as Error).message}}
-function closeDialog(){if(store.busy)return;settingsOpen.value=false;typesOpen.value=false;modelPage.value=false;modelDraft.key='';accountOpen.value=false}
+function closeDialog(){if(store.busy || modelPage.value && !saveModel())return false;settingsOpen.value=false;typesOpen.value=false;modelPage.value=false;modelDraft.key='';accountOpen.value=false}
 function shortcuts(e:KeyboardEvent){
   if(e.key==='Escape')closeDialog()
   if(dialogOpen.value && e.key==='Tab'){
@@ -316,20 +314,18 @@ onUnmounted(()=>{controller?.abort();clearInterval(refreshTimer);clearTimeout(un
     </section>
     <div id="mention-popup-layer" class="mention-popup-layer"></div>
   </div>
-  <div v-if="dialogOpen" :class="{'model-config-backdrop':modelPage}" class="modal-backdrop" @click.self="closeDialog"><section ref="modal" class="modal"  role="dialog" aria-modal="true" :aria-label="settingsOpen?'设置':modelPage?'模型配置':'管理任务类型'"><a-button html-type="submit" class="modal-close icon-button" @click="closeDialog" aria-label="关闭弹窗">×</a-button>
+  <div v-if="dialogOpen" class="modal-backdrop" @click.self="closeDialog"><section ref="modal" class="modal"  role="dialog" aria-modal="true" :aria-label="settingsOpen?'设置':modelPage?'模型配置':'管理任务类型'"><a-button html-type="submit" class="modal-close icon-button" @click="closeDialog" aria-label="关闭弹窗">×</a-button>
     <form v-if="settingsOpen" @submit.prevent="validateSettings"><p class="eyebrow">MAKE IT YOURS</p><h2>你的轻记，你来定义</h2><label>外观<select v-model="theme" aria-label="外观"><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></label><a-button v-if="!store.demo" html-type="button" class="settings-refresh" @click="settingsOpen=false;store.refresh()"><IconRefresh :size="15"/>刷新任务</a-button><hr><h3>模型配置</h3><p class="muted">在独立界面管理模型服务与密钥。</p><a-button html-type="button" class="full" @click="openModel">模型配置 →</a-button><a-button html-type="submit" type="primary" class="primary full">保存设置</a-button></form>
-    <form v-else-if="modelPage" @submit.prevent="saveModel" autocomplete="off">
-      <a-button html-type="button" class="text-button" @click="closeDialog();settingsOpen=true">← 返回设置</a-button>
-      <p class="eyebrow">YOUR MODEL, YOUR CONTROL</p><h2>模型配置</h2>
+    <form v-else-if="modelPage" @submit.prevent="saveModel()" autocomplete="off">
+      <a-button html-type="button" class="text-button" @click="closeDialog()!==false && (settingsOpen=true)">← 返回设置</a-button>
+      <h2>模型配置</h2>
       <p class="muted">使用 OpenAI 兼容服务。发送消息时，对话和引用任务会发送到此接口。</p>
-      <label>HTTPS 接口地址<input v-model="modelDraft.endpoint" type="url" required></label>
-      <label>模型名称<input v-model="modelDraft.model" required placeholder="填写供应商提供的模型 ID"></label>
-      <label>API Key<input v-model="modelDraft.key" type="password" autocomplete="new-password" required placeholder="你的 API Key"></label>
-      <label class="checkbox"><input v-model="rememberModel" type="checkbox">在此浏览器记住配置</label>
-      <p class="muted">仅在本机按账号保存，不同步到云端。共享设备请取消勾选；可随时清除。浏览器站点数据可能被同源脚本或设备使用者读取。</p>
-      <div class="connection-actions"><a-button html-type="button" :disabled="testing" @click="checkConnection">{{ testing?'测试中…':'测试连接' }}</a-button><a-button html-type="button" class="text-button" @click="clearModelKey">清除保存的配置</a-button></div>
+      <label>HTTPS 接口地址<input v-model="modelDraft.endpoint" @input="saveModel(false)" @change="saveModel()" type="url" required></label>
+      <label>模型名称<input v-model="modelDraft.model" @input="saveModel(false)" @change="saveModel()" required placeholder="填写供应商提供的模型 ID"></label>
+      <label>API Key<input v-model="modelDraft.key" @input="saveModel(false)" @change="saveModel()" type="password" autocomplete="new-password" required placeholder="你的 API Key"></label>
+      <div class="connection-actions"><a-button html-type="button" :disabled="testing" @click="checkConnection">{{ testing?'测试中…':'测试连接' }}</a-button></div>
       <p v-if="connectionNotice" class="muted" role="status">{{ connectionNotice }}</p>
-      <p class="muted">服务需要允许浏览器跨域请求。</p><a-button html-type="submit" type="primary" class="primary full">保存模型配置</a-button>
+      <p class="muted">服务需要允许浏览器跨域请求。</p>
     </form>
     <div v-else-if="typesOpen" class="type-manager"><p class="eyebrow">MAKE IT YOURS</p><h2>管理任务类型</h2><p class="muted">新增专属类型，或修改现有名称。基础类型保留；使用中的类型不能删除。</p>
       <p v-if="store.categoryError" class="error" role="alert">{{ store.categoryError }}<a-button class="text-button" @click="store.refreshCategories">重试</a-button></p>

@@ -42,7 +42,7 @@ test('AI creates, clarifies without mutation, and preserves tasks on failure',as
  await page.getByRole('button',{name:'模型配置 →',exact:true}).click()
  await page.getByLabel('HTTPS 接口地址').fill('https://model.example/v1/chat/completions')
  await page.getByLabel('模型名称').fill('test-model');await page.getByLabel('API Key',{exact:true}).fill('test-session-key')
- await page.getByRole('button',{name:'保存模型配置',exact:true}).click()
+ await page.getByRole('button',{name:'关闭弹窗',exact:true}).click()
  let mode='create'
  await page.route('https://model.example/**',async route=>{
   expect(route.request().headers().authorization).toBe('Bearer test-session-key')
