@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { defineAsyncComponent, computed, onMounted, onUnmounted, reactive, ref, watch, nextTick } from 'vue'
-import { IconCalendar, IconStar, IconSort, IconSortDescending, IconApps, IconSearch, IconSun, IconSettings, IconThunderbolt, IconCheck, IconClockCircle, IconStarFill, IconArrowUp, IconArrowDown, IconArrowLeft, IconMinus, IconFile, IconUserGroup, IconBulb, IconEdit, IconPlus, IconExpand, IconShrink, IconArchive, IconCalendarClock, IconCheckCircle, IconUser, IconRefresh, IconDelete, IconUndo, IconMessage, IconAt, IconClose } from '@arco-design/web-vue/es/icon'
+import { IconCalendar, IconStar, IconSort, IconSortDescending, IconApps, IconSearch, IconSun, IconSettings, IconThunderbolt, IconCheck, IconClockCircle, IconStarFill, IconArrowUp, IconArrowDown, IconArrowLeft, IconMinus, IconFile, IconUserGroup, IconBulb, IconEdit, IconPlus, IconExpand, IconShrink, IconArchive, IconCalendarClock, IconCheckCircle, IconUser, IconDelete, IconUndo, IconMessage, IconAt, IconClose } from '@arco-design/web-vue/es/icon'
 import zhCN from '@arco-design/web-vue/es/locale/lang/zh-cn'
+const SettingsPanel=defineAsyncComponent(()=>import('./SettingsPanel.vue'))
 const RecordMetadata=defineAsyncComponent(()=>import('./RecordMetadata.vue'))
 const RichInput=defineAsyncComponent(()=>import('./RichInput.vue'))
 import {minutesSchema,minutesText,textMinutes,titledMinutes,type MinutesNode} from './minutesDocument'
@@ -315,7 +316,7 @@ onUnmounted(()=>{controller?.abort();clearInterval(refreshTimer);clearTimeout(un
     <div id="mention-popup-layer" class="mention-popup-layer"></div>
   </div>
   <div v-if="dialogOpen" class="modal-backdrop" @click.self="closeDialog"><section ref="modal" class="modal"  role="dialog" aria-modal="true" :aria-label="settingsOpen?'设置':modelPage?'模型配置':'管理任务类型'"><a-button html-type="submit" class="modal-close icon-button" @click="closeDialog" aria-label="关闭弹窗">×</a-button>
-    <form v-if="settingsOpen" @submit.prevent="validateSettings"><p class="eyebrow">MAKE IT YOURS</p><h2>你的轻记，你来定义</h2><label>外观<select v-model="theme" aria-label="外观"><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></label><a-button v-if="!store.demo" html-type="button" class="settings-refresh" @click="settingsOpen=false;store.refresh()"><IconRefresh :size="15"/>刷新任务</a-button><hr><h3>模型配置</h3><p class="muted">在独立界面管理模型服务与密钥。</p><a-button html-type="button" class="full" @click="openModel">模型配置 →</a-button><a-button html-type="submit" type="primary" class="primary full">保存设置</a-button></form>
+    <SettingsPanel v-if="settingsOpen" v-model:theme="theme" @model="openModel" @save="validateSettings"/>
     <form v-else-if="modelPage" @submit.prevent="saveModel()" autocomplete="off">
       <a-button html-type="button" class="text-button model-back" @click="closeDialog()!==false && (settingsOpen=true)"><IconArrowLeft :size="16" aria-hidden="true"/><span>返回设置</span></a-button>
       <h2>模型配置</h2>

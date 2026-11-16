@@ -48,7 +48,7 @@ test('glass workspace uses inline Arco metadata and an always-visible editing to
  await expect(page.locator('.toast')).toHaveCount(0)
  await page.screenshot({path:'/tmp/qingji-glass-mobile.png',animations:'disabled'})
  await page.setViewportSize({width:1440,height:1000})
- await page.getByRole('button',{name:'设置',exact:true}).click();await page.getByLabel('外观',{exact:true}).selectOption('dark');await page.getByRole('button',{name:'保存设置',exact:true}).click()
+ await page.getByRole('button',{name:'设置',exact:true}).click();await choose(page,'外观','深色');await page.getByRole('button',{name:'保存设置',exact:true}).click()
  await page.keyboard.press('Escape');await expect(detail.getByRole('textbox',{name:'长文本内容'})).toBeVisible()
  await expect(page.locator('.toast')).toHaveCount(0)
  await page.screenshot({path:'/tmp/qingji-glass-dark.png',animations:'disabled'})

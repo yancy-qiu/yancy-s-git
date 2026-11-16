@@ -21,7 +21,7 @@ test('demo CRUD, filters, undo, persistence and theme',async({page})=>{
  await page.getByRole('button',{name:'撤销',exact:true}).click()
  await expect(page.getByRole('heading',{name:'准备产品评审',exact:true})).toBeVisible()
  await page.getByRole('button',{name:'设置',exact:true}).click()
- await page.getByLabel('外观', {exact:true}).selectOption('dark')
+ await choose(page,'外观','深色')
  await page.getByRole('button',{name:'保存设置',exact:true}).click()
  await page.reload();await page.getByRole('button',{name:'先体验演示版'}).click()
  await expect(page.locator('html')).toHaveAttribute('data-theme','dark')
@@ -39,7 +39,7 @@ test('mobile renders without overflow and supports creation',async({page})=>{
 })
 test('AI creates, clarifies without mutation, and preserves tasks on failure',async({page})=>{
  await demo(page);await page.getByRole('button',{name:'设置',exact:true}).click()
- await page.getByRole('button',{name:'模型配置 →',exact:true}).click()
+ await page.getByRole('button',{name:'模型配置',exact:true}).click()
  await page.getByLabel('HTTPS 接口地址').fill('https://model.example/v1/chat/completions')
  await page.getByLabel('模型名称').fill('test-model');await page.getByLabel('API Key',{exact:true}).fill('test-session-key')
  await page.getByRole('button',{name:'关闭弹窗',exact:true}).click()
