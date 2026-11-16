@@ -22,7 +22,7 @@ test('demo CRUD, filters, undo, persistence and theme',async({page})=>{
  await expect(page.getByRole('heading',{name:'准备产品评审',exact:true})).toBeVisible()
  await page.getByRole('button',{name:'设置',exact:true}).click()
  await choose(page,'外观','深色')
- await page.getByRole('button',{name:'保存设置',exact:true}).click()
+ await page.getByRole('button',{name:'关闭弹窗',exact:true}).click()
  await page.reload();await page.getByRole('button',{name:'先体验演示版'}).click()
  await expect(page.locator('html')).toHaveAttribute('data-theme','dark')
  await page.getByRole('navigation',{name:'任务视图',exact:true}).getByRole('button',{name:/全部记录/}).click()

@@ -222,7 +222,6 @@ async function checkConnection(){
   testing.value=true;connectionNotice.value=''
   try{await testConnection({endpoint:modelDraft.endpoint,model:modelDraft.model},modelDraft.key);connectionNotice.value='连接成功，模型已响应。'}catch(e){connectionNotice.value=e instanceof Error?e.message:'连接失败'}finally{testing.value=false}
 }
-function validateSettings(){settingsOpen.value=false;notice.value='设置已保存'}
 async function logout(){try{controller?.abort();await store.logout();clearSessionState()}catch(e){notice.value=(e as Error).message}}
 function closeDialog(){if(store.busy || modelPage.value && !saveModel())return false;settingsOpen.value=false;typesOpen.value=false;modelPage.value=false;modelDraft.key='';accountOpen.value=false}
 function shortcuts(e:KeyboardEvent){
@@ -315,8 +314,8 @@ onUnmounted(()=>{controller?.abort();clearInterval(refreshTimer);clearTimeout(un
     </section>
     <div id="mention-popup-layer" class="mention-popup-layer"></div>
   </div>
-  <div v-if="dialogOpen" class="modal-backdrop" @click.self="closeDialog"><section ref="modal" class="modal"  role="dialog" aria-modal="true" :aria-label="settingsOpen?'设置':modelPage?'模型配置':'管理任务类型'"><a-button html-type="submit" class="modal-close icon-button" @click="closeDialog" aria-label="关闭弹窗">×</a-button>
-    <SettingsPanel v-if="settingsOpen" v-model:theme="theme" @model="openModel" @save="validateSettings"/>
+  <div v-if="dialogOpen" class="modal-backdrop" @click.self="closeDialog"><section ref="modal" class="modal"  role="dialog" aria-modal="true" :aria-label="settingsOpen?'设置':modelPage?'模型配置':'管理任务类型'"><a-button html-type="submit" class="modal-close icon-button" @click="closeDialog" aria-label="关闭弹窗"><IconClose :size="18"/></a-button>
+    <SettingsPanel v-if="settingsOpen" v-model:theme="theme" @model="openModel"/>
     <form v-else-if="modelPage" @submit.prevent="saveModel()" autocomplete="off">
       <a-button html-type="button" class="text-button model-back" @click="closeDialog()!==false && (settingsOpen=true)"><IconArrowLeft :size="16" aria-hidden="true"/><span>返回设置</span></a-button>
       <h2>模型配置</h2>
