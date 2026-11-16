@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { defineAsyncComponent, computed, onMounted, onUnmounted, reactive, ref, watch, nextTick } from 'vue'
-import { IconCalendar, IconStar, IconSort, IconSortDescending, IconApps, IconSearch, IconSun, IconSettings, IconThunderbolt, IconCheck, IconClockCircle, IconStarFill, IconArrowUp, IconArrowDown, IconArrowLeft, IconMinus, IconFile, IconUserGroup, IconBulb, IconEdit, IconPlus, IconExpand, IconShrink, IconArchive, IconCalendarClock, IconCheckCircle, IconUser, IconDelete, IconUndo, IconMessage, IconAt, IconClose } from '@arco-design/web-vue/es/icon'
+import { IconCalendar, IconStar, IconSort, IconSortDescending, IconApps, IconSearch, IconSun, IconSettings, IconThunderbolt, IconCheck, IconClockCircle, IconStarFill, IconArrowUp, IconArrowDown, IconArrowLeft, IconMinus, IconFile, IconUserGroup, IconBulb, IconEdit, IconPlus, IconExpand, IconShrink, IconArchive, IconCalendarClock, IconCheckCircle, IconUser, IconDelete, IconUndo, IconMessage, IconAt, IconInfoCircle, IconClose } from '@arco-design/web-vue/es/icon'
 import zhCN from '@arco-design/web-vue/es/locale/lang/zh-cn'
 const SettingsPanel=defineAsyncComponent(()=>import('./SettingsPanel.vue'))
 const RecordMetadata=defineAsyncComponent(()=>import('./RecordMetadata.vue'))
@@ -75,6 +75,8 @@ const modal=ref<HTMLElement|null>(null)
 let previousFocus:HTMLElement|null=null
 const email=ref(''), password=ref(''), signup=ref(false), authBusy=ref(false), authNotice=ref(''), notice=useAutoDismissNotice()
 const key=ref(''), testing=ref(false), connectionNotice=ref('')
+const connectionState=ref<'idle'|'testing'|'success'|'error'>('idle')
+let connectionAttempt=0
 const modelPage=ref(false)
 const modelDraft=reactive({endpoint:'',model:'',key:''})
 const modelStorageKey=computed(()=>`qingji.vue.model.v1.${store.user?.id || (store.demo?'demo':'signed-out')}`)
@@ -109,14 +111,14 @@ function saveModel(showValidation=true){
   if(modelDraft.endpoint===endpoint.value && modelDraft.model===model.value && modelDraft.key===key.value)return true
   let next
   try{next={endpoint:endpointURL(modelDraft.endpoint.trim()),model:modelDraft.model.trim(),key:modelDraft.key.trim()}}
-  catch(e){if(showValidation)connectionNotice.value=e instanceof Error?e.message:'请输入有效的 HTTPS 接口地址。';return false}
+  catch(e){if(showValidation){connectionState.value='error';connectionNotice.value=e instanceof Error?e.message:'请输入有效的 HTTPS 接口地址。'}return false}
   try{
     localStorage.setItem(modelStorageKey.value,JSON.stringify(next))
     endpoint.value=next.endpoint;model.value=next.model;key.value=next.key
     sessionStorage.removeItem('qingji.vue.ai-key')
-    connectionNotice.value=''
+    connectionNotice.value='';connectionState.value='idle'
     return true
-  }catch{connectionNotice.value='配置保存失败，请检查浏览器存储权限。';return false}
+  }catch{connectionState.value='error';connectionNotice.value='配置保存失败，请检查浏览器存储权限。';return false}
 }
 
 const media=window.matchMedia('(prefers-color-scheme: dark)')
@@ -218,9 +220,19 @@ async function send(){
     else {messages.value.push({role:'assistant',content:result.reply});if(richDraft.value)richDraft.value=titledMinutes('')}
   }catch(e){if(version!==sessionVersion)return;input.value=text;messages.value.pop();aiError.value=e instanceof DOMException&&e.name==='TimeoutError'?'模型请求超时，原任务未改变。':e instanceof Error?e.message:'请求失败，原任务未改变。'}finally{if(version===sessionVersion){aiBusy.value=false;controller=undefined}}
 }
+watch(()=>[modelDraft.endpoint,modelDraft.model,modelDraft.key,modelPage.value,modelStorageKey.value],()=>{
+ connectionAttempt++;testing.value=false;connectionState.value='idle';connectionNotice.value=''
+},{flush:'sync'})
 async function checkConnection(){
-  testing.value=true;connectionNotice.value=''
-  try{await testConnection({endpoint:modelDraft.endpoint,model:modelDraft.model},modelDraft.key);connectionNotice.value='连接成功，模型已响应。'}catch(e){connectionNotice.value=e instanceof Error?e.message:'连接失败'}finally{testing.value=false}
+  if(testing.value)return
+  const attempt=++connectionAttempt
+  testing.value=true;connectionState.value='testing';connectionNotice.value=''
+  try{
+    await testConnection({endpoint:modelDraft.endpoint,model:modelDraft.model},modelDraft.key)
+    if(attempt!==connectionAttempt)return
+    connectionState.value='success';connectionNotice.value='连接成功，模型已响应。'
+  }catch(e){if(attempt===connectionAttempt){connectionState.value='error';connectionNotice.value=e instanceof Error?e.message:'连接失败'}}
+  finally{if(attempt===connectionAttempt)testing.value=false}
 }
 async function logout(){try{controller?.abort();await store.logout();clearSessionState()}catch(e){notice.value=(e as Error).message}}
 function closeDialog(){if(store.busy || modelPage.value && !saveModel())return false;settingsOpen.value=false;typesOpen.value=false;modelPage.value=false;modelDraft.key='';accountOpen.value=false}
@@ -318,13 +330,11 @@ onUnmounted(()=>{controller?.abort();clearInterval(refreshTimer);clearTimeout(un
     <SettingsPanel v-if="settingsOpen" v-model:theme="theme" @model="openModel"/>
     <form v-else-if="modelPage" @submit.prevent="saveModel()" autocomplete="off">
       <a-button html-type="button" class="text-button model-back" @click="closeDialog()!==false && (settingsOpen=true)"><IconArrowLeft :size="16" aria-hidden="true"/><span>返回设置</span></a-button>
-      <h2>模型配置</h2>
-      <p class="muted">使用 OpenAI 兼容服务。发送消息时，对话和引用任务会发送到此接口。</p>
+      <h2 class="model-title"><span>模型配置</span><a-tooltip content="使用 OpenAI 兼容服务，接口地址须使用 HTTPS。发送消息时，对话和引用任务会发送到此接口。"><a-button html-type="button" type="text" class="model-help" aria-label="接口配置说明"><IconInfoCircle :size="16"/></a-button></a-tooltip></h2>
       <label>HTTPS 接口地址<input v-model="modelDraft.endpoint" @input="saveModel(false)" @change="saveModel()" type="url" required></label>
       <label>模型名称<input v-model="modelDraft.model" @input="saveModel(false)" @change="saveModel()" required placeholder="填写供应商提供的模型 ID"></label>
       <label>API Key<input v-model="modelDraft.key" @input="saveModel(false)" @change="saveModel()" type="password" autocomplete="new-password" required placeholder="你的 API Key"></label>
-      <div class="connection-actions"><a-button html-type="button" :disabled="testing" @click="checkConnection">{{ testing?'测试中…':'测试连接' }}</a-button><span class="muted connection-hint">服务需要允许浏览器跨域请求。</span></div>
-      <p v-if="connectionNotice" class="muted" role="status">{{ connectionNotice }}</p>
+      <div class="connection-actions"><a-button html-type="button" :disabled="testing" @click="checkConnection">{{ testing?'测试中…':'测试连接' }}</a-button><a-tooltip content="测试会向当前接口发送一条简短消息，以确认模型能够响应。服务需要允许浏览器跨域请求。"><a-button html-type="button" type="text" class="model-help" aria-label="连接测试说明"><IconInfoCircle :size="16"/></a-button></a-tooltip><div class="connection-result" :data-state="connectionState" role="status" aria-live="polite"><span class="connection-dot" aria-hidden="true"></span><span>{{ testing?'正在测试…':connectionNotice || '未测试' }}</span></div></div>
     </form>
     <div v-else-if="typesOpen" class="type-manager"><p class="eyebrow">MAKE IT YOURS</p><h2>管理任务类型</h2><p class="muted">新增专属类型，或修改现有名称。基础类型保留；使用中的类型不能删除。</p>
       <p v-if="store.categoryError" class="error" role="alert">{{ store.categoryError }}<a-button class="text-button" @click="store.refreshCategories">重试</a-button></p>
